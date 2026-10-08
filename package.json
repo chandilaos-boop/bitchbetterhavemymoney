@@ -1,0 +1,13 @@
+{
+  "name": "bitchbetterhavemymoney",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "@netlify/database": "^2.0.1",
+    "@netlify/functions": "^6.0.2",
+    "bcryptjs": "^3.0.3"
+  }
+}
