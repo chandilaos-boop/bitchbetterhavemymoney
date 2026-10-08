@@ -1,0 +1,17 @@
+name: Smoke test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check site and database (read-only)
+        run: |
+          set -e
+          URL=https://bitchbetterhavemymoney.netlify.app
+          curl -fsS -o /dev/null -w "page %{http_code}\n" "$URL/"
+          # A bogus session cookie forces a query against the sessions table without writing anything.
+          curl -sS -w "\napi %{http_code}\n" -H "Cookie: bbhmm_session=smoke-test" "$URL/api/me" | tee out.txt
+          grep -q '"user":null' out.txt
