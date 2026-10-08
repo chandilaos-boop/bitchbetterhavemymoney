@@ -97,8 +97,14 @@ async function groupDetails(groupId: number) {
     WHERE e.group_id = ${groupId}
     GROUP BY e.id
     ORDER BY e.created_at DESC`;
+  const former = await db.sql<{ id: number; name: string }>`
+    SELECT DISTINCT u.id, u.name FROM users u
+    WHERE u.id NOT IN (SELECT user_id FROM group_members WHERE group_id = ${groupId})
+      AND (u.id IN (SELECT paid_by FROM expenses WHERE group_id = ${groupId})
+        OR u.id IN (SELECT s.user_id FROM expense_shares s JOIN expenses e ON e.id = s.expense_id WHERE e.group_id = ${groupId}))`;
   return {
     group,
+    former,
     members: members.map((m) => {
       const paid = Number(m.paid);
       const share = Number(m.share);
@@ -202,7 +208,16 @@ async function route(req: Request, context: Context): Promise<Response> {
       JOIN users u ON u.id = gm.user_id
       WHERE gm.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
       ORDER BY gm.joined_at DESC LIMIT 60`;
-    const items = [...expenses, ...joins]
+    const resets = await db.sql`
+      SELECT 'reset' AS type, r.group_id, g.name AS group_name, g.emoji, r.created_by AS actor_id, actor.name AS actor_name,
+        r.user_id AS target_id, target.name AS target_name, r.created_at AS at
+      FROM password_resets r
+      JOIN groups g ON g.id = r.group_id
+      JOIN users actor ON actor.id = r.created_by
+      JOIN users target ON target.id = r.user_id
+      WHERE r.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
+      ORDER BY r.created_at DESC LIMIT 20`;
+    const items = [...expenses, ...joins, ...resets]
       .sort((a, b) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime())
       .slice(0, 60);
     return json({ items });
@@ -286,6 +301,66 @@ async function route(req: Request, context: Context): Promise<Response> {
     await requireMember(expense.group_id, user.id);
     await db.sql`DELETE FROM expenses WHERE id = ${Number(m[1])}`;
     return json(await groupDetails(expense.group_id));
+  }
+
+  // A friend in a shared group creates a one-time reset link (24h) for someone who forgot their password.
+  if ((m = path.match(/^\/groups\/(\d+)\/members\/(\d+)\/reset$/)) && method === "POST") {
+    const user = await requireUser(context);
+    const groupId = Number(m[1]);
+    const targetId = Number(m[2]);
+    if (targetId === user.id) throw new HttpError(400, "Du kannst dir nicht selbst einen Reset-Link erstellen");
+    await requireMember(groupId, user.id);
+    await requireMember(groupId, targetId);
+    const token = randomBytes(24).toString("base64url");
+    await db.sql`UPDATE password_resets SET used_at = NOW() WHERE user_id = ${targetId} AND used_at IS NULL`;
+    await db.sql`INSERT INTO password_resets (token, user_id, created_by, group_id, expires_at)
+      VALUES (${token}, ${targetId}, ${user.id}, ${groupId}, NOW() + INTERVAL '24 hours')`;
+    return json({ token }, 201);
+  }
+
+  if ((m = path.match(/^\/reset\/([A-Za-z0-9_-]+)$/))) {
+    const token = m[1];
+    const [reset] = await db.sql<{ user_id: number; name: string; creator: string }>`
+      SELECT r.user_id, u.name, c.name AS creator FROM password_resets r
+      JOIN users u ON u.id = r.user_id JOIN users c ON c.id = r.created_by
+      WHERE r.token = ${token} AND r.used_at IS NULL AND r.expires_at > NOW()`;
+    if (!reset) throw new HttpError(404, "Dieser Link ist abgelaufen oder wurde schon benutzt");
+    if (method === "GET") return json({ name: reset.name, creator: reset.creator });
+    if (method === "POST") {
+      const password = str((await body(req)).password, "Passwort", 200);
+      if (password.length < 4) throw new HttpError(400, "Passwort muss mindestens 4 Zeichen haben");
+      const hash = await bcrypt.hash(password, 10);
+      const used = await db.sql`UPDATE password_resets SET used_at = NOW() WHERE token = ${token} AND used_at IS NULL RETURNING token`;
+      if (!used.length) throw new HttpError(404, "Dieser Link wurde schon benutzt");
+      await db.sql`UPDATE users SET password_hash = ${hash} WHERE id = ${reset.user_id}`;
+      await db.sql`DELETE FROM sessions WHERE user_id = ${reset.user_id}`;
+      await startSession(context, reset.user_id);
+      return json({ user: { id: reset.user_id, name: reset.name } });
+    }
+  }
+
+  // Remove a member (or yourself = leave). Only allowed when their balance in the group is zero.
+  if ((m = path.match(/^\/groups\/(\d+)\/members\/(\d+)$/)) && method === "DELETE") {
+    const user = await requireUser(context);
+    const groupId = Number(m[1]);
+    const targetId = Number(m[2]);
+    await requireMember(groupId, user.id);
+    await requireMember(groupId, targetId);
+    const details = await groupDetails(groupId);
+    const target = details.members.find((x) => x.id === targetId)!;
+    if (target.balance !== 0) {
+      throw new HttpError(
+        409,
+        target.balance > 0
+          ? `${target.name} bekommt noch Geld – erst ausgleichen, dann entfernen`
+          : `${target.name} schuldet noch Geld – erst ausgleichen, dann entfernen`,
+      );
+    }
+    await db.sql`DELETE FROM group_members WHERE group_id = ${groupId} AND user_id = ${targetId}`;
+    const left = await db.sql`SELECT 1 FROM group_members WHERE group_id = ${groupId} LIMIT 1`;
+    if (!left.length) await db.sql`DELETE FROM groups WHERE id = ${groupId}`;
+    if (targetId === user.id) return json({ left: true });
+    return json(await groupDetails(groupId));
   }
 
   throw new HttpError(404, "Nicht gefunden");

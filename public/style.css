@@ -461,3 +461,5 @@ svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-widt
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.member-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.member-actions .btn { flex: 1; }

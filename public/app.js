@@ -420,10 +420,12 @@ function authView(pendingCode) {
               <input class="input" type="password" id="password" autocomplete="${mode === "login" ? "current-password" : "new-password"}" required placeholder="mind. 4 Zeichen"></label>
             <p class="error" id="err"></p>
             <button class="btn block" type="submit">${mode === "login" ? "Anmelden" : "Konto erstellen"}</button>
+            ${mode === "login" ? `<div style="text-align:center;margin-top:12px"><button type="button" class="link-btn" id="forgot">Passwort vergessen?</button></div>` : ""}
           </form>
         </div>
       </div>`;
     app.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => { mode = b.dataset.mode; draw(); }));
+    app.querySelector("#forgot")?.addEventListener("click", forgotSheet);
     app.querySelector("#auth").addEventListener("submit", async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector("button[type=submit]");
@@ -632,6 +634,8 @@ async function activityView() {
         if (net > 0) effect = `<div class="effect pos money">Du bekommst ${fmt(net)} zurück</div>`;
         else if (net < 0) effect = `<div class="effect neg money">Du schuldest ${fmt(-net)}</div>`;
         else effect = `<div class="effect faint">Nicht beteiligt</div>`;
+      } else if (it.type === "reset") {
+        text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} einen Passwort-Reset-Link für <b>${it.target_id === me ? "dich" : esc(it.target_name)}</b> erstellt 🔑`;
       } else if (it.type === "created") {
         text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} die Gruppe „<b>${esc(it.group_name)}</b>“ erstellt.`;
       } else {
@@ -725,7 +729,7 @@ function myNet(e) {
 function drawGroup(data) {
   const { group, members, expenses } = data;
   const me = members.find((m) => m.id === state.user.id);
-  const byId = Object.fromEntries(members.map((m) => [m.id, m]));
+  const byId = Object.fromEntries([...(data.former ?? []), ...members].map((m) => [m.id, m]));
   const total = expenses.filter((e) => !e.is_settlement).reduce((s, e) => s + e.amount_cents, 0);
   const transfers = settlements(members);
 
@@ -775,6 +779,11 @@ function drawGroup(data) {
         <div class="stats">
           <div class="stat"><div class="lbl">Ausgegeben</div><div class="val money">${fmt(m.paid)}</div></div>
           <div class="stat"><div class="lbl">Anteil gesamt</div><div class="val money">${fmt(m.share)}</div></div>
+        </div>
+        <div class="member-actions">
+          ${m.id === state.user.id
+            ? `<button class="btn ghost sm" data-leave>🚪 Gruppe verlassen</button>`
+            : `<button class="btn ghost sm" data-reset="${m.id}">🔑 Passwort-Reset</button><button class="btn ghost sm" data-remove="${m.id}">🚪 Entfernen</button>`}
         </div>
       </div>`,
     )
@@ -846,6 +855,13 @@ function drawGroup(data) {
     b.addEventListener("click", () => settleSheet(group, transfers[Number(b.dataset.settle)])),
   );
   app.querySelector("#invite").addEventListener("click", () => inviteSheet(group));
+  app.querySelectorAll("[data-reset]").forEach((b) =>
+    b.addEventListener("click", () => resetSheet(group, byId[b.dataset.reset])),
+  );
+  app.querySelectorAll("[data-remove]").forEach((b) =>
+    b.addEventListener("click", () => removeSheet(group, byId[b.dataset.remove])),
+  );
+  app.querySelector("[data-leave]")?.addEventListener("click", () => removeSheet(group, me, true));
 }
 
 function inviteSheet(group) {
@@ -881,7 +897,7 @@ function inviteSheet(group) {
 }
 
 function expenseDetail(data, e) {
-  const byId = Object.fromEntries(data.members.map((m) => [m.id, m]));
+  const byId = Object.fromEntries([...(data.former ?? []), ...data.members].map((m) => [m.id, m]));
   const d = new Date(e.created_at);
   const payer = byId[e.paid_by];
   openSheet(
@@ -1084,6 +1100,152 @@ async function expenseSheet(presetGroupId) {
   });
 }
 
+
+function resetSheet(group, person) {
+  openSheet(
+    "Passwort zurücksetzen",
+    `
+    <div style="text-align:center">
+      <div style="display:flex;justify-content:center;margin-bottom:12px">${avatar(person, 72)}</div>
+      <p><b>${esc(person.name)}</b> hat das Passwort vergessen? Kein Drama.</p>
+      <p class="muted small" style="margin-top:8px">Du erstellst einen Link, mit dem ${esc(firstName(person.name))} ein neues Passwort setzen kann.
+        Er gilt <b style="color:var(--text)">24 Stunden</b> und nur <b style="color:var(--text)">einmal</b>. Die Gruppe sieht im Aktivitäts-Feed, dass du ihn erstellt hast.</p>
+      <p class="muted small" style="margin-top:8px">⚠️ Nur machen, wenn ${esc(firstName(person.name))} dich wirklich darum gebeten hat.</p>
+      <button class="btn block mt" id="mk">🔑 Reset-Link erstellen</button>
+    </div>`,
+    (el) =>
+      el.querySelector("#mk").addEventListener("click", async (ev) => {
+        ev.target.disabled = true;
+        try {
+          const { token } = await api(`/groups/${group.id}/members/${person.id}/reset`, { method: "POST" });
+          const url = `${location.origin}/reset/${token}`;
+          el.innerHTML = `
+            <div style="text-align:center">
+              <div class="big wobble" style="font-size:48px">🔑</div>
+              <p class="mt">Schick diesen Link an <b>${esc(person.name)}</b>:</p>
+              <div class="card mt money" style="word-break:break-all;font-size:13.5px;padding:12px">${esc(url)}</div>
+              <button class="btn block mt" id="share-reset">${icon("share")} Link senden</button>
+              <button class="btn ghost block" id="copy-reset" style="margin-top:10px">${icon("link")} Kopieren</button>
+            </div>`;
+          const copy = async () => {
+            try { await navigator.clipboard.writeText(url); toast("Link kopiert ✓"); } catch { prompt("Link kopieren:", url); }
+          };
+          el.querySelector("#copy-reset").addEventListener("click", copy);
+          el.querySelector("#share-reset").addEventListener("click", () => {
+            if (navigator.share) navigator.share({ title: "Neues Passwort", text: `Hier kannst du dein Passwort für Better Have My Money neu setzen 🔑`, url }).catch(() => {});
+            else copy();
+          });
+        } catch (err) {
+          fail(err.message);
+          ev.target.disabled = false;
+        }
+      }),
+  );
+}
+
+function removeSheet(group, person, self = false) {
+  const blocked = person.balance !== 0;
+  openSheet(
+    self ? "Gruppe verlassen" : "Mitglied entfernen",
+    `
+    <div style="text-align:center">
+      <div style="display:flex;justify-content:center;margin-bottom:12px">${self ? groupTile(group, "lg") : avatar(person, 72)}</div>
+      ${blocked
+        ? `<p><b>${self ? "Du" : esc(person.name)}</b> ${self ? (person.balance > 0 ? "bekommst" : "schuldest") : person.balance > 0 ? "bekommt" : "schuldet"} noch <b class="${person.balance > 0 ? "pos" : "neg"} money">${fmt(Math.abs(person.balance))}</b>.</p>
+           <p class="muted small" style="margin-top:8px">Erst ausgleichen (Übersicht → „Begleichen“) oder die Ausgaben löschen – dann klappt's. Sonst würde die Rechnung der anderen nicht mehr aufgehen 🧮</p>
+           <button class="btn ghost block mt" data-close>Okay</button>`
+        : `<p>${self ? `Willst du „<b>${esc(group.name)}</b>“ wirklich verlassen?` : `<b>${esc(person.name)}</b> aus „<b>${esc(group.name)}</b>“ entfernen?`}</p>
+           <p class="muted small" style="margin-top:8px">${self ? "Du kannst jederzeit mit dem Einladungscode zurückkommen." : `Alte Ausgaben bleiben erhalten. ${esc(firstName(person.name))} kann mit dem Einladungscode wieder beitreten.`}</p>
+           <button class="btn danger block mt" id="rm">🚪 ${self ? "Verlassen" : "Entfernen"}</button>`}
+    </div>`,
+    (el) =>
+      el.querySelector("#rm")?.addEventListener("click", async (ev) => {
+        ev.target.disabled = true;
+        try {
+          const res = await api(`/groups/${group.id}/members/${person.id}`, { method: "DELETE" });
+          closeSheet();
+          if (res.left) {
+            groupCache.delete(String(group.id));
+            await refreshMe();
+            navigate("/", true);
+            toast("Tschüss, Gruppe 👋");
+          } else {
+            updateGroup(res);
+            await refreshMe();
+            toast(`${firstName(person.name)} ist raus 👋`);
+          }
+        } catch (err) {
+          fail(err.message);
+          ev.target.disabled = false;
+        }
+      }),
+  );
+}
+
+function resetView(token) {
+  app.innerHTML = `<div class="shell no-nav"><div class="loading"><div class="spinner"></div></div></div>`;
+  api(`/reset/${token}`)
+    .then(({ name, creator }) => {
+      app.innerHTML = `
+        <div class="shell no-nav">
+          <div class="auth fade-in">
+            <div class="auth-brand">
+              <div class="logo-wrap"><span class="orbit o1">🔑</span><span class="orbit o3">✨</span><div class="logo">€</div></div>
+              <h1>Hi ${esc(firstName(name))}! 👋</h1>
+              <p>${esc(creator)} hat dir diesen Link geschickt. Setz einfach ein neues Passwort – diesmal merken 😉</p>
+            </div>
+            <form class="card" id="rs" style="padding:18px">
+              <label class="field"><span class="field-label">Neues Passwort</span>
+                <input class="input" type="password" id="pw" autocomplete="new-password" required placeholder="mind. 4 Zeichen"></label>
+              <p class="error" id="err"></p>
+              <button class="btn block" type="submit">Passwort speichern</button>
+            </form>
+          </div>
+        </div>`;
+      app.querySelector("#rs").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector("button");
+        btn.disabled = true;
+        try {
+          await api(`/reset/${token}`, { method: "POST", body: { password: app.querySelector("#pw").value } });
+          await refreshMe();
+          history.replaceState({}, "", "/");
+          render();
+          toast("Neues Passwort gesetzt 🎉");
+          confetti();
+        } catch (err) {
+          app.querySelector("#err").textContent = err.message;
+          shake(app.querySelector("#rs"));
+          btn.disabled = false;
+        }
+      });
+    })
+    .catch((err) => {
+      app.innerHTML = `
+        <div class="shell no-nav"><div class="auth fade-in">
+          <div class="empty"><div class="big wobble">⌛</div><b>Link ungültig</b>${esc(err.message)}. Frag einfach nochmal nach einem neuen.
+            <div style="margin-top:16px"><a class="btn" href="/" id="home">Zur Anmeldung</a></div></div>
+        </div></div>`;
+      app.querySelector("#home").addEventListener("click", (e) => { e.preventDefault(); history.replaceState({}, "", "/"); render(); });
+    });
+}
+
+function forgotSheet() {
+  openSheet(
+    "Passwort vergessen? 🙈",
+    `<div class="stack">
+      <p>Kein Problem – deine Freunde retten dich:</p>
+      <div class="card stack small">
+        <p>1️⃣ Schreib jemandem aus deiner Gruppe (z. B. per WhatsApp).</p>
+        <p>2️⃣ Die Person öffnet die Gruppe → <b>Übersicht</b> → bei dir auf <b>🔑 Passwort-Reset</b>.</p>
+        <p>3️⃣ Sie schickt dir den Link – du setzt ein neues Passwort. Fertig!</p>
+      </div>
+      <p class="muted small">Der Link gilt 24 Stunden und nur einmal.</p>
+      <button class="btn ghost block" data-close>Alles klar</button>
+    </div>`,
+  );
+}
+
 // ---------- router ----------
 async function render() {
   const path = location.pathname;
@@ -1092,6 +1254,9 @@ async function render() {
     store.set("pendingJoin", join[1].toUpperCase());
     history.replaceState({}, "", "/");
   }
+
+  const reset = path.match(/^\/reset\/([A-Za-z0-9_-]+)/);
+  if (reset) return resetView(reset[1]);
 
   if (!state.user) return authView(store.get("pendingJoin"));
 
