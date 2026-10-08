@@ -1,0 +1,29 @@
+name: Netlify deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      site_id:
+        description: Netlify site id
+        required: true
+      proxy_path:
+        description: One-time deploy proxy path from the Netlify MCP server
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask deploy credential
+        run: |
+          P=$(jq -r '.inputs.proxy_path' "$GITHUB_EVENT_PATH")
+          echo "::add-mask::$P"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy via Netlify MCP
+        env:
+          SITE_ID: ${{ inputs.site_id }}
+          PROXY_PATH: ${{ inputs.proxy_path }}
+        run: npx -y @netlify/mcp@latest --site-id "$SITE_ID" --proxy-path "$PROXY_PATH"
