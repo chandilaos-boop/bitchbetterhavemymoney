@@ -69,6 +69,164 @@ function toast(msg) {
   toast.t = setTimeout(() => el.classList.remove("show"), 2400);
 }
 
+
+// ---------- fun stuff ----------
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const buzz = (p = 10) => { try { navigator.vibrate?.(p); } catch {} };
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".btn, .pill-btn, .round-btn, .chip, .nav a, .segmented button, .emoji-grid button")) buzz(8);
+});
+
+const EMOJI_RULES = [
+  [/pizza/, "🍕"], [/d[öo]ner|kebab|anadolu|dürüm/, "🥙"], [/burger|mcdonald|burger king/, "🍔"], [/sushi/, "🍣"],
+  [/pommes|imbiss/, "🍟"], [/bier|beer|kasten|späti/, "🍺"], [/wein|sekt|prosecco/, "🍷"], [/cocktail|drinks?\b|schnaps|shots?/, "🍹"],
+  [/kaffee|coffee|café|latte/, "☕"], [/\beis\b|gelato/, "🍦"], [/tank|benzin|diesel|sprit/, "⛽"], [/taxi|uber|bolt/, "🚕"],
+  [/bahn|zug|\bdb\b|flixbus|bus/, "🚆"], [/flug|flight|ryanair|lufthansa|easyjet/, "✈️"], [/hotel|airbnb|unterkunft|hostel/, "🛏️"],
+  [/rewe|edeka|lidl|aldi|netto|penny|einkauf|supermarkt|kaufland/, "🛒"], [/miete|wohnung/, "🏠"], [/strom|gas\b|nebenkosten/, "⚡"],
+  [/internet|wlan|wifi|router|handy/, "📡"], [/klopapier|spüli|putz|drogerie|\bdm\b|rossmann/, "🧻"], [/kino|film|netflix|spotify|streaming/, "🍿"],
+  [/konzert|festival|ticket/, "🎟️"], [/party|geburtstag|bday/, "🎉"], [/geschenk/, "🎁"], [/restaurant|essen|dinner|lunch|mittag|abendessen/, "🍽️"],
+  [/frühstück|brötchen|bäcker|croissant/, "🥐"], [/grill|bbq/, "🍖"], [/club|eintritt|disco/, "🪩"], [/park(en|haus|ticket)/, "🅿️"],
+  [/apotheke|medizin|tabletten/, "💊"], [/sport|gym|fitness|bouldern/, "🏋️"], [/spiel|game|playstation|bowling/, "🎮"], [/kippen|zigarette|tabak/, "🚬"],
+  [/blumen/, "💐"], [/ski|lift/, "🎿"], [/boot|fähre/, "⛴️"], [/mietwagen|auto|sixt/, "🚗"], [/pfand/, "♻️"],
+];
+function guessEmoji(title) {
+  const t = String(title).toLowerCase();
+  for (const [re, e] of EMOJI_RULES) if (re.test(t)) return e;
+  return "🧾";
+}
+function amountVibe(cents) {
+  if (!cents) return "";
+  const e = cents / 100;
+  if (e < 3) return "Kleinvieh macht auch Mist 🐁";
+  if (e < 10) return "Peanuts 🥜";
+  if (e < 30) return "Geht klar 👌";
+  if (e < 75) return "Solide 💪";
+  if (e < 150) return "Uff, okay 😮‍💨";
+  if (e < 400) return "Big Spender 💸";
+  if (e < 1500) return "Wer hat im Lotto gewonnen? 🎰";
+  return "Habt ihr ein Auto gekauft?! 🚗";
+}
+const TITLE_IDEAS = [
+  "Döner um 3 Uhr nachts", "Pizza (ja, mit Ananas 🍍)", "Bier für die ganze Crew", "Tanken, weil Kevin fahren wollte",
+  "Wocheneinkauf Rewe", "Klopapier-Großeinkauf", "Späti-Runde", "Airbnb Lissabon", "Sushi-Abend", "Kinotickets + Popcorn",
+];
+const MSG = {
+  saved: ["Ka-ching! 🤑", "Notiert. Keiner entkommt 😈", "Gespeichert – jetzt wird kassiert 💰", "Zack, eingetragen ⚡", "Die Buchhaltung ist stolz auf dich 📒"],
+  settled: ["Schulden adé! 🕊️", "Ehrenhafter Move 🫡", "Bezahlt wie ein Profi 🤝", "Konto: glücklich 😌"],
+  allSettled: ["Alles quitt! Party! 🎉", "Schuldenfrei – sauber! ✨"],
+  deleted: ["Weg damit 🗑️", "Hat's nie gegeben 🤫", "Puff – gelöscht 💨"],
+  created: ["Gruppe steht! Jetzt Leute einladen 📣", "Neue Gang, neues Glück 🎉"],
+  joined: ["Willkommen in der Gang! 🎉", "Du bist drin 😎"],
+};
+function heroMood(net) {
+  if (net > 50000) return pick(["Du bist quasi die Bank 🏦", "Zeit, Zinsen zu verlangen 📈"]);
+  if (net > 0) return pick(["Die anderen stehen in deiner Schuld 😏", "Freundlich erinnern ist erlaubt 🔔", "Deine Kohle wartet auf dich 💰"]);
+  if (net < -50000) return pick(["Vielleicht mal ein paar Pfandflaschen sammeln? ♻️", "Uff. Zeit für einen Kassensturz 😬"]);
+  if (net < 0) return pick(["Zeit, die Spendierhosen anzuziehen 👖", "Ehrensache: zurückzahlen 🫡", "Kleiner Reminder: PayPal existiert 😇"]);
+  return pick(["Alles quitt. Zen-Modus 🧘", "Keine Schulden, keine Sorgen ✨"]);
+}
+function greeting() {
+  const h = new Date().getHours();
+  const n = esc(firstName(state.user.name));
+  if (h < 5) return `Noch wach, ${n}? 🦉`;
+  if (h < 11) return `Guten Morgen, ${n} ☀️`;
+  if (h < 17) return `Hey ${n} 👋`;
+  if (h < 22) return `N'Abend, ${n} 🌆`;
+  return `Späte Runde, ${n}? 🌙`;
+}
+
+// Count-up animation for elements with data-count (cents); remembers last shown value per key.
+const shownCounts = new Map();
+function animateCounts(root) {
+  root.querySelectorAll("[data-count]").forEach((el) => {
+    const to = Number(el.dataset.count);
+    const key = el.dataset.key || "";
+    const from = shownCounts.has(key) ? shownCounts.get(key) : 0;
+    shownCounts.set(key, to);
+    if (reducedMotion || from === to) return (el.textContent = fmt(to));
+    const start = performance.now(), dur = 900;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - t, 4);
+      el.textContent = fmt(Math.round(from + (to - from) * e));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    el.textContent = fmt(from);
+    requestAnimationFrame(step);
+  });
+}
+
+function fxCanvas() {
+  const c = document.createElement("canvas");
+  c.className = "fx";
+  const dpr = devicePixelRatio || 1;
+  c.width = innerWidth * dpr;
+  c.height = innerHeight * dpr;
+  document.body.appendChild(c);
+  const ctx = c.getContext("2d");
+  ctx.scale(dpr, dpr);
+  return { c, ctx, W: innerWidth, H: innerHeight };
+}
+function moneyRain(n = 36, emojis = ["💸", "💶", "🤑", "💰", "🪙"]) {
+  if (reducedMotion) return;
+  const { c, ctx, W, H } = fxCanvas();
+  const ps = Array.from({ length: n }, () => ({
+    x: Math.random() * W, y: -40 - Math.random() * H * 0.45, vy: 5 + Math.random() * 4, vx: (Math.random() - 0.5) * 1.2,
+    r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.12, s: 22 + Math.random() * 20, e: pick(emojis), ph: Math.random() * 10,
+  }));
+  let t = 0;
+  const step = () => {
+    t++;
+    ctx.clearRect(0, 0, W, H);
+    let alive = 0;
+    for (const p of ps) {
+      p.vy += 0.04; p.y += p.vy; p.x += p.vx + Math.sin(t / 14 + p.ph) * 0.8; p.r += p.vr;
+      if (p.y < H + 50) alive++;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+      ctx.font = `${p.s}px serif`; ctx.textAlign = "center"; ctx.fillText(p.e, 0, 0);
+      ctx.restore();
+    }
+    if (alive && t < 420) requestAnimationFrame(step);
+    else c.remove();
+  };
+  step();
+}
+function confetti(x = innerWidth / 2, y = innerHeight * 0.6, n = 90) {
+  if (reducedMotion) return;
+  const { c, ctx, W, H } = fxCanvas();
+  const colors = ["#34d399", "#a7f3d0", "#facc15", "#f472b6", "#60a5fa", "#ffffff", "#fb923c"];
+  const ps = Array.from({ length: n }, () => {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1, v = 7 + Math.random() * 9;
+    return { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, w: 6 + Math.random() * 6, h: 4 + Math.random() * 6, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4, col: pick(colors) };
+  });
+  let t = 0;
+  const step = () => {
+    t++;
+    ctx.clearRect(0, 0, W, H);
+    for (const p of ps) {
+      p.vy += 0.32; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.globalAlpha = Math.max(0, 1 - t / 140);
+      ctx.fillStyle = p.col; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(t / 6 + p.r)));
+      ctx.restore();
+    }
+    if (t < 140) requestAnimationFrame(step);
+    else c.remove();
+  };
+  step();
+}
+function shake(el) {
+  if (!el) return;
+  buzz([20, 40, 20]);
+  el.classList.remove("shake");
+  void el.offsetWidth;
+  el.classList.add("shake");
+}
+function fail(msg, el) {
+  toast(msg);
+  shake(el ?? currentSheet?.querySelector(".sheet"));
+}
+
 const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
 function ago(date) {
@@ -145,8 +303,10 @@ function heroCard() {
   const label = net > 0 ? "Insgesamt bekommst du" : net < 0 ? "Insgesamt schuldest du" : "Du bist überall quitt";
   return `
     <section class="hero fade-in">
+      <div class="hero-deco">${net > 0 ? "🤑" : net < 0 ? "😬" : "🧘"}</div>
       <div class="hero-label">${label}</div>
-      <div class="hero-amount money ${net > 0 ? "pos" : net < 0 ? "neg" : ""}">${fmt(Math.abs(net))}</div>
+      <div class="hero-amount money ${net > 0 ? "pos" : net < 0 ? "neg" : ""}" data-count="${Math.abs(net)}" data-key="total">${fmt(Math.abs(net))}</div>
+      <div class="hero-mood">${heroMood(net)}</div>
       <div class="hero-sub">
         <span>Du bekommst <b class="money">${fmt(owed)}</b></span>
         <span>Du schuldest <b class="money">${fmt(owe)}</b></span>
@@ -168,6 +328,7 @@ function shell(content, { nav = null, fab = true } = {}) {
     ${fab && state.groups.length ? `<button class="btn fab" id="fab">${icon("receipt")} Ausgabe hinzufügen</button>` : ""}
     ${nav ? navHtml(nav) : ""}`;
   app.querySelector("#fab")?.addEventListener("click", () => expenseSheet(fab === true ? null : fab));
+  animateCounts(app);
 }
 
 function navHtml(active) {
@@ -240,9 +401,12 @@ function authView(pendingCode) {
       <div class="shell no-nav">
         <div class="auth fade-in">
           <div class="auth-brand">
-            <div class="logo">€</div>
-            <h1>Better Have My Money</h1>
-            <p>Gemeinsame Ausgaben – fair geteilt, ohne Stress.</p>
+            <div class="logo-wrap">
+              <span class="orbit o1">💸</span><span class="orbit o2">🍕</span><span class="orbit o3">🍻</span><span class="orbit o4">🪙</span>
+              <div class="logo">€</div>
+            </div>
+            <h1>Better Have<br><span class="shimmer">My Money</span></h1>
+            <p>Geld teilen unter Freunden – ohne Excel, ohne Drama, ohne „Ich zahl dir's nächste Woche“. 🎤</p>
           </div>
           <form class="card" id="auth" style="padding:18px">
             <div class="segmented" style="margin-bottom:18px">
@@ -273,6 +437,7 @@ function authView(pendingCode) {
         render();
       } catch (err) {
         app.querySelector("#err").textContent = err.message;
+        shake(app.querySelector("#auth"));
         btn.disabled = false;
       }
     });
@@ -318,15 +483,15 @@ function groupsView() {
   shell(
     `
     <header class="header">
-      <h1 class="page-title">Gruppen</h1>
+      <div><h1 class="page-title">Gruppen</h1><p class="greet">${greeting()}</p></div>
       <button class="pill-btn" id="new-group">${icon("plus")} Gruppe</button>
     </header>
     ${heroCard()}
     <div class="section">
       ${
         groups.length
-          ? `<div class="rows fade-in">${rows}</div>`
-          : `<div class="empty"><div class="big">👋</div><b>Noch keine Gruppe</b>Erstell eine Gruppe für WG, Urlaub oder Kneipenabend – oder tritt mit einem Code bei.
+          ? `<div class="rows stagger">${rows}</div>`
+          : `<div class="empty"><div class="big wobble">🦗</div><b>So leer wie dein Kühlschrank am Monatsende</b>Erstell eine Gruppe für WG, Urlaub oder Kneipentour – oder tritt mit einem Code bei.
              <div style="margin-top:16px"><button class="btn" id="new-group-2">${icon("plus")} Gruppe erstellen</button></div></div>`
       }
     </div>`,
@@ -373,9 +538,10 @@ function groupSheet() {
           await refreshMe();
           closeSheet();
           navigate(`/g/${id}`);
-          toast("Gruppe erstellt – lade jetzt deine Leute ein!");
+          toast(pick(MSG.created));
+          confetti();
         } catch (err) {
-          toast(err.message);
+          fail(err.message);
           btn.disabled = false;
         }
       });
@@ -393,7 +559,8 @@ async function joinGroup(code) {
     const { id } = await api("/groups/join", { method: "POST", body: { code } });
     await refreshMe();
     navigate(`/g/${id}`, true);
-    toast("Willkommen in der Gruppe! 🎉");
+    toast(pick(MSG.joined));
+    confetti();
   } catch (err) {
     toast(err.message);
     navigate("/", true);
@@ -419,7 +586,7 @@ function friendsView() {
     <div class="section">
       ${
         list.length
-          ? `<div class="rows fade-in">${list
+          ? `<div class="rows stagger">${list
               .map(
                 (p) => `
             <div class="row" style="cursor:default">
@@ -432,7 +599,7 @@ function friendsView() {
             </div>`,
               )
               .join("")}</div>`
-          : `<div class="empty"><div class="big">🫂</div><b>Noch niemand hier</b>Teile den Einladungslink einer Gruppe – alle, die beitreten, erscheinen hier.</div>`
+          : `<div class="empty"><div class="big wobble">🫂</div><b>Freunde kann man nicht kaufen</b>…aber einladen! Teile den Link einer Gruppe – alle, die beitreten, tauchen hier auf.</div>`
       }
     </div>`,
     { nav: "/freunde" },
@@ -480,8 +647,8 @@ async function activityView() {
     })
     .join("");
   app.querySelector(".loading").outerHTML = items.length
-    ? `<div class="fade-in">${html}</div>`
-    : `<div class="empty"><div class="big">📭</div><b>Noch nichts passiert</b>Sobald jemand Ausgaben einträgt, siehst du es hier.</div>`;
+    ? `<div class="stagger">${html}</div>`
+    : `<div class="empty"><div class="big wobble">🦗</div><b>Totenstille</b>Noch hat niemand Geld ausgegeben. Verdächtig.</div>`;
 }
 
 // ---------- account ----------
@@ -582,20 +749,26 @@ function drawGroup(data) {
       return `${header}
         <div class="row" data-exp="${e.id}">
           <div class="date-block"><div class="m">${MONTHS[d.getMonth()]}</div><div class="d">${String(d.getDate()).padStart(2, "0")}</div></div>
-          <div class="receipt ${e.is_settlement ? "settle" : ""}">${icon(e.is_settlement ? "swap" : "receipt")}</div>
+          <div class="receipt emoji ${e.is_settlement ? "settle" : ""}">${e.is_settlement ? "🤝" : guessEmoji(e.title)}</div>
           <div class="grow"><div class="row-title" style="font-size:16px">${esc(e.title)}</div><div class="row-sub money">${sub}</div></div>
           ${right}
         </div>`;
     })
     .join("");
 
+  const badges = {};
+  const topPayer = [...members].sort((a, b) => b.paid - a.paid)[0];
+  const topDebtor = [...members].sort((a, b) => a.balance - b.balance)[0];
+  if (topPayer?.paid > 0) badges[topPayer.id] = "👑 Sponsor";
+  if (topDebtor?.balance < 0 && !badges[topDebtor.id]) badges[topDebtor.id] = "🐌 Schnorrer-Alarm";
+  for (const m of members) if (!badges[m.id] && m.paid > 0 && !m.balance) badges[m.id] = "😇 Ehrenmensch";
   const balanceCards = members
     .map(
       (m) => `
       <div class="card balance-card">
         <div class="balance-top">
           ${avatar(m, 42)}
-          <div class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}</div>
+          <div class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}${badges[m.id] ? `<div class="badge-chip">${badges[m.id]}</div>` : ""}</div>
           ${m.balance ? `<div class="status ${m.balance > 0 ? "pos" : "neg"}"><div class="lbl">${m.balance > 0 ? "bekommt" : "schuldet"}</div><div class="amt money">${fmt(Math.abs(m.balance))}</div></div>`
                       : `<div class="status settled"><div class="lbl">quitt</div></div>`}
         </div>
@@ -631,8 +804,10 @@ function drawGroup(data) {
       <p class="muted small">${members.length} ${members.length === 1 ? "Person" : "Personen"} · Gesamtausgaben <b style="color:var(--text)" class="money">${fmt(total)}</b></p>
     </div>
     <section class="hero" style="padding:18px 20px">
+      <div class="hero-deco">${me?.balance > 0 ? "🤑" : me?.balance < 0 ? "😬" : "🧘"}</div>
       <div class="hero-label">${!me?.balance ? "Du bist in dieser Gruppe quitt" : me.balance > 0 ? "Du bekommst in dieser Gruppe" : "Du schuldest in dieser Gruppe"}</div>
-      ${me?.balance ? `<div class="hero-amount money ${me.balance > 0 ? "pos" : "neg"}" style="font-size:34px">${fmt(Math.abs(me.balance))}</div>` : ""}
+      ${me?.balance ? `<div class="hero-amount money ${me.balance > 0 ? "pos" : "neg"}" style="font-size:34px" data-count="${Math.abs(me.balance)}" data-key="g${group.id}">${fmt(Math.abs(me.balance))}</div>` : ""}
+      <div class="hero-mood">${heroMood(me?.balance ?? 0)}</div>
       <div class="hero-sub">
         <span>Ausgegeben <b class="money">${fmt(me?.paid ?? 0)}</b></span>
         <span>Dein Anteil <b class="money">${fmt(me?.share ?? 0)}</b></span>
@@ -646,9 +821,9 @@ function drawGroup(data) {
       ${
         groupTab === "expenses"
           ? expenses.length
-            ? `<div class="rows">${expenseRows}</div>`
-            : `<div class="empty mt"><div class="big">🧾</div><b>Noch keine Ausgaben</b>${members.length < 2 ? "Lade erst deine Leute ein – dann kann's losgehen." : "Tippe auf „Ausgabe hinzufügen“."}</div>`
-          : `<div class="mt">${balanceCards}</div>
+            ? `<div class="rows stagger">${expenseRows}</div>`
+            : `<div class="empty mt"><div class="big wobble">🤨</div><b>Verdächtig sparsam hier</b>${members.length < 2 ? "Alleine teilen ist langweilig – lad erst deine Leute ein!" : "Tippe auf „Ausgabe hinzufügen“ und los geht's."}</div>`
+          : `<div class="mt stagger">${balanceCards}</div>
              ${transfers.length ? `<div class="section"><div class="section-head"><span class="h2">So wird's ausgeglichen</span></div><div class="card" style="padding:6px 14px">${transferRows}</div></div>` : ""}`
       }
     </div>
@@ -713,7 +888,7 @@ function expenseDetail(data, e) {
     e.is_settlement ? "Zahlung" : "Ausgabe",
     `
     <div style="display:flex;gap:14px;align-items:center">
-      <div class="receipt ${e.is_settlement ? "settle" : ""}" style="width:56px;height:56px">${icon(e.is_settlement ? "swap" : "receipt")}</div>
+      <div class="receipt emoji ${e.is_settlement ? "settle" : ""}" style="width:60px;height:60px;font-size:30px">${e.is_settlement ? "🤝" : guessEmoji(e.title)}</div>
       <div style="min-width:0">
         <div style="font-size:20px;font-weight:800">${esc(e.title)}</div>
         <div class="money" style="font-size:28px;font-weight:800">${fmt(e.amount_cents)}</div>
@@ -729,11 +904,11 @@ function expenseDetail(data, e) {
     <button class="btn danger block mt" id="del">${icon("trash")} Löschen</button>`,
     (el) =>
       el.querySelector("#del").addEventListener("click", async () => {
-        if (!confirm(`„${e.title}“ wirklich löschen?`)) return;
+        if (!confirm(`„${e.title}“ löschen?\nDas Geld ist dadurch leider trotzdem weg 🕵️`)) return;
         try {
           updateGroup(await api(`/expenses/${e.id}`, { method: "DELETE" }));
           closeSheet();
-          toast("Gelöscht");
+          toast(pick(MSG.deleted));
         } catch (err) {
           toast(err.message);
         }
@@ -758,7 +933,7 @@ function settleSheet(group, t) {
     (el) =>
       el.querySelector("#ok").addEventListener("click", async (ev) => {
         const cents = parseAmount(el.querySelector("#amt").value);
-        if (!cents) return toast("Bitte einen gültigen Betrag eingeben");
+        if (!cents) return fail("Ohne Betrag kein Deal 🙃");
         ev.target.disabled = true;
         try {
           const data = await api(`/groups/${group.id}/expenses`, {
@@ -767,7 +942,9 @@ function settleSheet(group, t) {
           });
           updateGroup(data);
           closeSheet();
-          toast("Zahlung eingetragen ✓");
+          const allSettled = data.members.every((m) => !m.balance);
+          toast(pick(allSettled ? MSG.allSettled : MSG.settled));
+          moneyRain(allSettled ? 60 : 30, allSettled ? ["🎉", "🥳", "💸", "✨", "🍾"] : ["🤝", "💸", "🕊️", "💶"]);
         } catch (err) {
           toast(err.message);
           ev.target.disabled = false;
@@ -797,9 +974,10 @@ async function expenseSheet(presetGroupId) {
       </div>`}
     <form id="exp">
       <label class="field"><span class="field-label">Titel</span>
-        <div class="input-icon">${icon("tag")}<input class="input" id="title" placeholder="z. B. Einkauf, Pizza, Tanken …" maxlength="100" required autocomplete="off"></div></label>
+        <div class="input-icon"><span class="title-emoji" id="temoji">🧾</span><input class="input" id="title" placeholder="${esc(pick(TITLE_IDEAS))}" maxlength="100" required autocomplete="off"></div></label>
       <div class="field"><span class="field-label">Betrag</span>
-        <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off"><span>€</span></label></div>
+        <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off"><span>€</span></label>
+        <p class="vibe" id="vibe"></p></div>
       <div id="who"></div>
       <button class="btn block mt" type="submit" id="save">Ausgabe speichern</button>
     </form>`,
@@ -819,10 +997,16 @@ async function expenseSheet(presetGroupId) {
       const share = on && n && cents ? Math.floor(cents / n) + (idx < cents % n ? 1 : 0) : 0;
       p.querySelector(".share").textContent = on && cents ? fmt(share) : "";
     });
+    const vibe = body.querySelector("#vibe");
+    const v = amountVibe(cents);
+    if (vibe.textContent !== v) { vibe.textContent = v; vibe.classList.remove("pop"); void vibe.offsetWidth; vibe.classList.add("pop"); }
+    const te = body.querySelector("#temoji");
+    const em = guessEmoji(body.querySelector("#title").value);
+    if (te.textContent !== em) { te.textContent = em; te.classList.remove("pop"); void te.offsetWidth; te.classList.add("pop"); }
     const all = who.querySelector("#all");
     if (all) all.textContent = n === members.length ? "Keinen" : "Alle";
     const hint = who.querySelector("#hint");
-    if (hint) hint.textContent = n ? `Geteilt durch ${n} ${n === 1 ? "Person" : "Personen"}` : "Wähl mindestens eine Person aus";
+    if (hint) hint.textContent = n === 0 ? "Wähl mindestens eine Person aus 👆" : n === 1 ? "Nur eine Person? Großzügig 😇" : n === members.length ? `Alle ${n} sind dabei – fair is fair 🤝` : `Geteilt durch ${n} Personen`;
   };
 
   const loadMembers = async () => {
@@ -873,11 +1057,11 @@ async function expenseSheet(presetGroupId) {
 
   body.querySelector("#exp").addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!groupId) return toast("Bitte eine Gruppe auswählen");
+    if (!groupId) return fail("Erst eine Gruppe wählen 👆");
     const amount_cents = parseAmount(amountEl.value);
     const participants = [...who.querySelectorAll(".check:checked")].map((c) => Number(c.value));
-    if (!amount_cents) return toast("Bitte einen gültigen Betrag eingeben");
-    if (!participants.length) return toast("Mindestens eine Person auswählen");
+    if (!amount_cents) return fail("Ohne Betrag kein Deal 🙃");
+    if (!participants.length) return fail("Irgendwer muss das ja bezahlen 👀");
     const btn = body.querySelector("#save");
     btn.disabled = true;
     try {
@@ -887,7 +1071,8 @@ async function expenseSheet(presetGroupId) {
       });
       updateGroup(data);
       closeSheet();
-      toast("Ausgabe gespeichert ✓");
+      toast(pick(MSG.saved));
+      moneyRain(amount_cents >= 10000 ? 50 : 26, ["💸", "💶", "🤑", guessEmoji(body.querySelector("#title").value)].filter((x) => x !== "🧾"));
       if (location.pathname !== `/g/${groupId}`) {
         groupTab = "expenses";
         navigate(`/g/${groupId}`);
