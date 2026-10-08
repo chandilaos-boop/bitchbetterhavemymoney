@@ -81,7 +81,7 @@ function split(amount: number, userIds: number[]) {
 }
 
 async function groupDetails(groupId: number) {
-  const [group] = await db.sql`SELECT id, name, invite_code FROM groups WHERE id = ${groupId}`;
+  const [group] = await db.sql`SELECT id, name, emoji, invite_code, created_by FROM groups WHERE id = ${groupId}`;
   const members = await db.sql<{ id: number; name: string; paid: string; share: string }>`
     SELECT u.id, u.name,
       COALESCE((SELECT SUM(e.amount_cents) FROM expenses e WHERE e.group_id = ${groupId} AND e.paid_by = u.id), 0) AS paid,
@@ -91,7 +91,7 @@ async function groupDetails(groupId: number) {
     WHERE gm.group_id = ${groupId}
     ORDER BY gm.joined_at`;
   const expenses = await db.sql`
-    SELECT e.id, e.title, e.amount_cents, e.paid_by, e.created_at,
+    SELECT e.id, e.title, e.amount_cents, e.paid_by, e.created_by, e.is_settlement, e.created_at,
       COALESCE(json_agg(json_build_object('user_id', s.user_id, 'cents', s.share_cents)) FILTER (WHERE s.user_id IS NOT NULL), '[]') AS shares
     FROM expenses e LEFT JOIN expense_shares s ON s.expense_id = e.id
     WHERE e.group_id = ${groupId}
@@ -150,20 +150,72 @@ async function route(req: Request, context: Context): Promise<Response> {
   if (path === "/me" && method === "GET") {
     const user = await currentUser(context);
     if (!user) return json({ user: null, groups: [] });
-    const groups = await db.sql`
-      SELECT g.id, g.name,
-        (SELECT COUNT(*)::int FROM group_members x WHERE x.group_id = g.id) AS member_count
+    const groups = await db.sql<{ id: number; name: string; emoji: string; joined_at: string; expense_count: number }>`
+      SELECT g.id, g.name, g.emoji, gm.joined_at,
+        (SELECT COUNT(*)::int FROM expenses e WHERE e.group_id = g.id) AS expense_count
       FROM groups g JOIN group_members gm ON gm.group_id = g.id
       WHERE gm.user_id = ${user.id}
       ORDER BY gm.joined_at DESC`;
-    return json({ user, groups });
+    const members = await db.sql<{ group_id: number; id: number; name: string; paid: string; share: string }>`
+      WITH mine AS (SELECT group_id FROM group_members WHERE user_id = ${user.id}),
+      paid AS (
+        SELECT group_id, paid_by AS user_id, SUM(amount_cents) AS cents FROM expenses
+        WHERE group_id IN (SELECT group_id FROM mine) GROUP BY 1, 2),
+      share AS (
+        SELECT e.group_id, s.user_id, SUM(s.share_cents) AS cents
+        FROM expense_shares s JOIN expenses e ON e.id = s.expense_id
+        WHERE e.group_id IN (SELECT group_id FROM mine) GROUP BY 1, 2)
+      SELECT gm.group_id, u.id, u.name, COALESCE(p.cents, 0) AS paid, COALESCE(sh.cents, 0) AS share
+      FROM group_members gm JOIN users u ON u.id = gm.user_id
+      LEFT JOIN paid p ON p.group_id = gm.group_id AND p.user_id = gm.user_id
+      LEFT JOIN share sh ON sh.group_id = gm.group_id AND sh.user_id = gm.user_id
+      WHERE gm.group_id IN (SELECT group_id FROM mine)
+      ORDER BY gm.joined_at`;
+    return json({
+      user,
+      groups: groups.map((g) => ({
+        ...g,
+        members: members
+          .filter((m) => m.group_id === g.id)
+          .map((m) => ({ id: m.id, name: m.name, balance: Number(m.paid) - Number(m.share) })),
+      })),
+    });
+  }
+
+  if (path === "/activity" && method === "GET") {
+    const user = await requireUser(context);
+    const expenses = await db.sql`
+      SELECT 'expense' AS type, e.id, e.group_id, g.name AS group_name, g.emoji, e.title, e.amount_cents,
+        e.paid_by, payer.name AS payer_name, e.is_settlement, e.created_by AS actor_id, actor.name AS actor_name, e.created_at AS at,
+        (SELECT s.share_cents FROM expense_shares s WHERE s.expense_id = e.id AND s.user_id = ${user.id}) AS my_share
+      FROM expenses e
+      JOIN groups g ON g.id = e.group_id
+      JOIN users payer ON payer.id = e.paid_by
+      JOIN users actor ON actor.id = e.created_by
+      WHERE e.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
+      ORDER BY e.created_at DESC LIMIT 60`;
+    const joins = await db.sql`
+      SELECT CASE WHEN gm.user_id = g.created_by THEN 'created' ELSE 'joined' END AS type,
+        gm.group_id, g.name AS group_name, g.emoji, gm.user_id AS actor_id, u.name AS actor_name, gm.joined_at AS at
+      FROM group_members gm
+      JOIN groups g ON g.id = gm.group_id
+      JOIN users u ON u.id = gm.user_id
+      WHERE gm.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
+      ORDER BY gm.joined_at DESC LIMIT 60`;
+    const items = [...expenses, ...joins]
+      .sort((a, b) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime())
+      .slice(0, 60);
+    return json({ items });
   }
 
   if (path === "/groups" && method === "POST") {
     const user = await requireUser(context);
-    const name = str((await body(req)).name, "Gruppenname", 60);
+    const b = await body(req);
+    const name = str(b.name, "Gruppenname", 60);
+    const emoji = typeof b.emoji === "string" && b.emoji.trim() && b.emoji.length <= 16 ? b.emoji.trim() : "💸";
     const [group] = await db.sql<{ id: number }>`
-      INSERT INTO groups (name, invite_code, created_by) VALUES (${name}, ${inviteCode()}, ${user.id}) RETURNING id`;
+      INSERT INTO groups (name, emoji, invite_code, created_by)
+      VALUES (${name}, ${emoji}, ${inviteCode()}, ${user.id}) RETURNING id`;
     await db.sql`INSERT INTO group_members (group_id, user_id) VALUES (${group.id}, ${user.id})`;
     return json({ id: group.id }, 201);
   }
@@ -206,8 +258,9 @@ async function route(req: Request, context: Context): Promise<Response> {
     try {
       await client.query("BEGIN");
       const { rows } = await client.query(
-        "INSERT INTO expenses (group_id, title, amount_cents, paid_by, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-        [groupId, title, amount, paidBy, user.id],
+        `INSERT INTO expenses (group_id, title, amount_cents, paid_by, created_by, is_settlement)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [groupId, title, amount, paidBy, user.id, b.is_settlement === true],
       );
       for (const s of split(amount, participants)) {
         await client.query("INSERT INTO expense_shares (expense_id, user_id, share_cents) VALUES ($1, $2, $3)", [

@@ -3,22 +3,79 @@ const state = { user: null, groups: [] };
 
 // ---------- helpers ----------
 const esc = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const fmt = (cents) => (cents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+const firstName = (name) => String(name).trim().split(/\s+/)[0];
 
-const fmt = (cents) =>
-  (cents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+const store = {
+  get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} },
+  del: (k) => { try { sessionStorage.removeItem(k); } catch {} },
+};
 
-const COLORS = ["#3ddc84", "#a3e635", "#34d399", "#facc15", "#5eead4", "#86efac", "#fbbf24", "#bef264"];
-const color = (id) => COLORS[id % COLORS.length];
-const initials = (name) => name.trim().slice(0, 2).toUpperCase();
-const avatar = (u) => `<div class="avatar" style="background:${color(u.id)}">${esc(initials(u.name))}</div>`;
+const ICONS = {
+  groups: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.6a3.5 3.5 0 0 1 0 6.8"/>',
+  friend: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+  activity: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 14l3-3 3 3 4-5"/>',
+  account: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.6 18.4a6 6 0 0 1 10.8 0"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  receipt: '<path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  share: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/>',
+  tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="8" cy="8" r="1.5"/>',
+  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+};
+const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+
+// Deterministic geometric avatar, Splitwise-style but greener.
+const PALETTES = [
+  ["#0f5a3c", "#34d399", "#a7f3d0"], ["#134e4a", "#2dd4bf", "#99f6e4"], ["#7c2d12", "#fb923c", "#fed7aa"],
+  ["#1e3a5f", "#60a5fa", "#bfdbfe"], ["#4c1d95", "#a78bfa", "#ddd6fe"], ["#713f12", "#facc15", "#fef08a"],
+  ["#831843", "#f472b6", "#fbcfe8"], ["#365314", "#a3e635", "#d9f99d"], ["#164e63", "#22d3ee", "#a5f3fc"],
+];
+const hash = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+function avatar(u, size = 44, cls = "") {
+  const h = hash(`${u.id}:${u.name}`);
+  const [a, b, c] = PALETTES[h % PALETTES.length];
+  const x = 20 + (h % 60), y = 20 + ((h >> 4) % 60), r = (h >> 8) % 4;
+  const shapes = [
+    `<polygon points="0,0 100,0 ${x},${y}" fill="${b}"/><polygon points="0,100 ${x},${y} 100,100" fill="${c}" opacity=".85"/>`,
+    `<polygon points="0,${y} 100,0 100,100" fill="${b}"/><polygon points="${x},100 100,${y} 100,100" fill="${c}"/>`,
+    `<polygon points="0,0 ${x},0 0,100" fill="${b}"/><polygon points="100,0 100,100 ${x},${y}" fill="${c}" opacity=".9"/>`,
+    `<polygon points="0,0 100,${y} 0,100" fill="${b}"/><polygon points="0,100 ${x},100 0,${y}" fill="${c}"/>`,
+  ][r];
+  const ini = esc(String(u.name).trim().slice(0, 1).toUpperCase());
+  return `<svg class="avatar ${cls}" width="${size}" height="${size}" viewBox="0 0 100 100" aria-label="${esc(u.name)}">
+    <clipPath id="c${h}"><circle cx="50" cy="50" r="50"/></clipPath>
+    <g clip-path="url(#c${h})"><rect width="100" height="100" fill="${a}"/>${shapes}</g>
+    <text x="50" y="50" dy=".35em" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="40" fill="#fff" opacity=".92">${ini}</text>
+  </svg>`;
+}
+function groupTile(g, cls = "") {
+  const [a, b] = PALETTES[hash(`g${g.id}`) % PALETTES.length];
+  return `<div class="tile ${cls}" style="background:linear-gradient(140deg, ${b}55, ${a})">${esc(g.emoji || "💸")}</div>`;
+}
 
 function toast(msg) {
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.classList.remove("show"), 2200);
+  toast.t = setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
+function ago(date) {
+  const s = (new Date(date) - Date.now()) / 1000;
+  const units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [u, sec] of units) if (Math.abs(s) >= sec) return rtf.format(Math.round(s / sec), u);
+  return "gerade eben";
 }
 
 async function api(path, { method = "GET", body } = {}) {
@@ -30,44 +87,13 @@ async function api(path, { method = "GET", body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && path !== "/login") {
+    if (res.status === 401 && !["/login", "/register"].includes(path)) {
       state.user = null;
+      render();
     }
     throw new Error(data.error || "Etwas ist schiefgelaufen");
   }
   return data;
-}
-
-function navigate(path, replace = false) {
-  history[replace ? "replaceState" : "pushState"]({}, "", path);
-  render();
-}
-
-document.addEventListener("click", (e) => {
-  const a = e.target.closest("a[data-link]");
-  if (a) {
-    e.preventDefault();
-    navigate(a.getAttribute("href"));
-  }
-});
-window.addEventListener("popstate", render);
-
-function topbar() {
-  return `
-    <header class="topbar">
-      <a href="/" data-link class="brand" style="color:inherit;text-decoration:none">
-        <div class="brand-logo">€</div><span>Better Have My Money</span>
-      </a>
-      <button class="icon-btn" id="logout" title="Abmelden">Abmelden</button>
-    </header>`;
-}
-
-function bindLogout() {
-  document.getElementById("logout")?.addEventListener("click", async () => {
-    await api("/logout", { method: "POST" }).catch(() => {});
-    state.user = null;
-    navigate("/", true);
-  });
 }
 
 async function refreshMe() {
@@ -76,39 +102,164 @@ async function refreshMe() {
   state.groups = data.groups;
 }
 
-// ---------- views ----------
+// Greedy minimal set of transfers that settles a group.
+function settlements(members) {
+  const debtors = members.filter((m) => m.balance < 0).map((m) => ({ ...m, rest: -m.balance }));
+  const creditors = members.filter((m) => m.balance > 0).map((m) => ({ ...m, rest: m.balance }));
+  debtors.sort((a, b) => b.rest - a.rest);
+  creditors.sort((a, b) => b.rest - a.rest);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const x = Math.min(debtors[i].rest, creditors[j].rest);
+    if (x > 0) out.push({ from: debtors[i], to: creditors[j], cents: x });
+    debtors[i].rest -= x;
+    creditors[j].rest -= x;
+    if (!debtors[i].rest) i++;
+    if (!creditors[j].rest) j++;
+  }
+  return out;
+}
+
+// What others owe me (+) / I owe others (-) within a group, per person.
+function myDebts(members) {
+  const me = state.user.id;
+  return settlements(members)
+    .filter((t) => t.from.id === me || t.to.id === me)
+    .map((t) => (t.to.id === me ? { person: t.from, cents: t.cents } : { person: t.to, cents: -t.cents }));
+}
+
+function totals() {
+  let owed = 0, owe = 0;
+  for (const g of state.groups) {
+    const me = g.members.find((m) => m.id === state.user.id);
+    if (!me) continue;
+    if (me.balance > 0) owed += me.balance;
+    else owe -= me.balance;
+  }
+  return { owed, owe, net: owed - owe };
+}
+
+function heroCard() {
+  const { owed, owe, net } = totals();
+  const label = net > 0 ? "Insgesamt bekommst du" : net < 0 ? "Insgesamt schuldest du" : "Du bist überall quitt";
+  return `
+    <section class="hero fade-in">
+      <div class="hero-label">${label}</div>
+      <div class="hero-amount money ${net > 0 ? "pos" : net < 0 ? "neg" : ""}">${fmt(Math.abs(net))}</div>
+      <div class="hero-sub">
+        <span>Du bekommst <b class="money">${fmt(owed)}</b></span>
+        <span>Du schuldest <b class="money">${fmt(owe)}</b></span>
+      </div>
+    </section>`;
+}
+
+function statusHtml(cents, { me = true, settledText = "quitt" } = {}) {
+  if (!cents) return `<div class="status settled"><div class="lbl">${settledText}</div></div>`;
+  const pos = cents > 0;
+  const lbl = me ? (pos ? "du bekommst" : "du schuldest") : pos ? "schuldet dir" : "du schuldest";
+  return `<div class="status ${pos ? "pos" : "neg"}"><div class="lbl">${lbl}</div><div class="amt money">${fmt(Math.abs(cents))}</div></div>`;
+}
+
+// ---------- shell ----------
+function shell(content, { nav = null, fab = true } = {}) {
+  app.innerHTML = `
+    <div class="shell ${nav ? "" : "no-nav"}">${content}</div>
+    ${fab && state.groups.length ? `<button class="btn fab" id="fab">${icon("receipt")} Ausgabe hinzufügen</button>` : ""}
+    ${nav ? navHtml(nav) : ""}`;
+  app.querySelector("#fab")?.addEventListener("click", () => expenseSheet(fab === true ? null : fab));
+}
+
+function navHtml(active) {
+  const items = [
+    ["/", "groups", "Gruppen"],
+    ["/freunde", "friend", "Freunde"],
+    ["/aktivitaet", "activity", "Aktivität"],
+    ["/konto", "account", "Konto"],
+  ];
+  return `<nav class="nav">${items
+    .map(([href, ic, label]) => `<a href="${href}" data-link class="${active === href ? "active" : ""}">${icon(ic)}<span>${label}</span></a>`)
+    .join("")}</nav>`;
+}
+
+function navigate(path, replace = false) {
+  history[replace ? "replaceState" : "pushState"]({}, "", path);
+  render();
+  window.scrollTo(0, 0);
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-link]");
+  if (a) {
+    e.preventDefault();
+    if (a.getAttribute("href") !== location.pathname) navigate(a.getAttribute("href"));
+  }
+});
+window.addEventListener("popstate", () => {
+  closeSheet(true);
+  render();
+});
+
+// ---------- sheet ----------
+let currentSheet = null;
+function openSheet(title, html, onMount) {
+  closeSheet(true);
+  const wrap = document.createElement("div");
+  wrap.className = "sheet-backdrop";
+  wrap.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>${esc(title)}</h2><button class="round-btn" data-close aria-label="Schließen">${icon("close")}</button></div>
+      <div class="sheet-body">${html}</div>
+    </div>`;
+  document.body.appendChild(wrap);
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => wrap.classList.add("open"));
+  wrap.addEventListener("click", (e) => {
+    if (e.target === wrap || e.target.closest("[data-close]")) closeSheet();
+  });
+  currentSheet = wrap;
+  onMount?.(wrap.querySelector(".sheet-body"));
+  return wrap.querySelector(".sheet-body");
+}
+function closeSheet(instant = false) {
+  const el = currentSheet;
+  if (!el) return;
+  currentSheet = null;
+  document.body.style.overflow = "";
+  if (instant) return el.remove();
+  el.classList.remove("open");
+  setTimeout(() => el.remove(), 260);
+}
+document.addEventListener("keydown", (e) => e.key === "Escape" && closeSheet());
+
+// ---------- auth ----------
 function authView(pendingCode) {
   let mode = "login";
   const draw = () => {
     app.innerHTML = `
-      <section class="hero">
-        <div class="brand-logo">€</div>
-        <h1>Better Have My Money</h1>
-        <p class="muted">Gemeinsame Ausgaben mit Freunden – fair geteilt.</p>
-      </section>
-      <form class="card stack" id="auth">
-        <div class="tabs">
-          <button type="button" data-mode="login" class="${mode === "login" ? "active" : ""}">Anmelden</button>
-          <button type="button" data-mode="register" class="${mode === "register" ? "active" : ""}">Registrieren</button>
+      <div class="shell no-nav">
+        <div class="auth fade-in">
+          <div class="auth-brand">
+            <div class="logo">€</div>
+            <h1>Better Have My Money</h1>
+            <p>Gemeinsame Ausgaben – fair geteilt, ohne Stress.</p>
+          </div>
+          <form class="card" id="auth" style="padding:18px">
+            <div class="segmented" style="margin-bottom:18px">
+              <button type="button" data-mode="login" class="${mode === "login" ? "active" : ""}">Anmelden</button>
+              <button type="button" data-mode="register" class="${mode === "register" ? "active" : ""}">Registrieren</button>
+            </div>
+            ${pendingCode ? `<p class="muted small" style="margin:-4px 0 14px">Melde dich an, um der Gruppe mit Code <b style="color:var(--text)">${esc(pendingCode)}</b> beizutreten.</p>` : ""}
+            <label class="field"><span class="field-label">Name</span>
+              <input class="input" id="name" autocomplete="username" autocapitalize="words" required maxlength="40" placeholder="z. B. Jan"></label>
+            <label class="field"><span class="field-label">Passwort</span>
+              <input class="input" type="password" id="password" autocomplete="${mode === "login" ? "current-password" : "new-password"}" required placeholder="mind. 4 Zeichen"></label>
+            <p class="error" id="err"></p>
+            <button class="btn block" type="submit">${mode === "login" ? "Anmelden" : "Konto erstellen"}</button>
+          </form>
         </div>
-        ${pendingCode ? `<p class="muted small">Melde dich an, um der Gruppe beizutreten (Code <b>${esc(pendingCode)}</b>).</p>` : ""}
-        <div>
-          <label for="name">Name</label>
-          <input type="text" id="name" autocomplete="username" autocapitalize="words" required maxlength="40" placeholder="z. B. Jan">
-        </div>
-        <div>
-          <label for="password">Passwort</label>
-          <input type="password" id="password" autocomplete="${mode === "login" ? "current-password" : "new-password"}" required placeholder="mind. 4 Zeichen">
-        </div>
-        <p class="error" id="err"></p>
-        <button class="btn block" type="submit">${mode === "login" ? "Anmelden" : "Konto erstellen"}</button>
-      </form>`;
-    app.querySelectorAll("[data-mode]").forEach((b) =>
-      b.addEventListener("click", () => {
-        mode = b.dataset.mode;
-        draw();
-      }),
-    );
+      </div>`;
+    app.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => { mode = b.dataset.mode; draw(); }));
     app.querySelector("#auth").addEventListener("submit", async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector("button[type=submit]");
@@ -129,60 +280,112 @@ function authView(pendingCode) {
   draw();
 }
 
-function homeView() {
+// ---------- groups (home) ----------
+function groupsView() {
   const groups = state.groups;
-  app.innerHTML = `
-    ${topbar()}
-    <h1>Hi ${esc(state.user.name)} 👋</h1>
-    <p class="muted" style="margin-top:6px">Deine Gruppen</p>
+  const rows = groups
+    .map((g) => {
+      const me = g.members.find((m) => m.id === state.user.id);
+      const debts = myDebts(g.members);
+      const status = !g.expense_count
+        ? `<div class="status none"><div class="lbl">keine Ausgaben</div></div>`
+        : statusHtml(me?.balance ?? 0);
+      const tree = debts.length
+        ? `<div class="tree">${debts
+            .slice(0, 4)
+            .map((d) =>
+              d.cents > 0
+                ? `<div>${esc(d.person.name)} schuldet dir <b class="pos money">${fmt(d.cents)}</b></div>`
+                : `<div>Du schuldest ${esc(d.person.name)} <b class="neg money">${fmt(-d.cents)}</b></div>`,
+            )
+            .join("")}</div>`
+        : "";
+      return `
+        <div class="group-block">
+          <a class="row" href="/g/${g.id}" data-link>
+            ${groupTile(g)}
+            <div class="grow">
+              <div class="row-title">${esc(g.name)}</div>
+              <div class="row-sub">${g.members.length} ${g.members.length === 1 ? "Person" : "Personen"}</div>
+            </div>
+            ${status}
+          </a>
+          ${tree}
+        </div>`;
+    })
+    .join("");
 
-    <div class="list section" style="margin-top:16px">
+  shell(
+    `
+    <header class="header">
+      <h1 class="page-title">Gruppen</h1>
+      <button class="pill-btn" id="new-group">${icon("plus")} Gruppe</button>
+    </header>
+    ${heroCard()}
+    <div class="section">
       ${
         groups.length
-          ? groups
-              .map(
-                (g) => `
-        <a class="list-item" href="/g/${g.id}" data-link>
-          ${avatar(g)}
-          <div class="grow">
-            <div class="title">${esc(g.name)}</div>
-            <div class="muted small">${g.member_count} ${g.member_count === 1 ? "Person" : "Personen"}</div>
-          </div>
-          <span class="muted">›</span>
-        </a>`,
-              )
-              .join("")
-          : `<div class="card empty">Noch keine Gruppe. Erstell eine oder tritt mit einem Code bei.</div>`
+          ? `<div class="rows fade-in">${rows}</div>`
+          : `<div class="empty"><div class="big">👋</div><b>Noch keine Gruppe</b>Erstell eine Gruppe für WG, Urlaub oder Kneipenabend – oder tritt mit einem Code bei.
+             <div style="margin-top:16px"><button class="btn" id="new-group-2">${icon("plus")} Gruppe erstellen</button></div></div>`
       }
-    </div>
+    </div>`,
+    { nav: "/" },
+  );
+  app.querySelector("#new-group").addEventListener("click", groupSheet);
+  app.querySelector("#new-group-2")?.addEventListener("click", groupSheet);
+}
 
-    <form class="card stack section" id="create">
-      <h2>Neue Gruppe</h2>
-      <input type="text" id="gname" placeholder="z. B. WG, Urlaub Kroatien …" maxlength="60" required>
-      <button class="btn block" type="submit">Gruppe erstellen</button>
+const EMOJIS = ["🏠", "🏖️", "✈️", "🍕", "🍻", "🎉", "🚗", "⛺", "🎿", "🛒", "❤️", "💸"];
+function groupSheet() {
+  let emoji = EMOJIS[0];
+  openSheet(
+    "Neue Gruppe",
+    `
+    <form id="create">
+      <div class="field"><span class="field-label">Symbol</span>
+        <div class="emoji-grid">${EMOJIS.map((e, i) => `<button type="button" data-e="${e}" class="${i ? "" : "active"}">${e}</button>`).join("")}</div>
+      </div>
+      <label class="field"><span class="field-label">Name der Gruppe</span>
+        <input class="input" id="gname" placeholder="z. B. WG Lassallestr. 19" maxlength="60" required></label>
+      <button class="btn block mt" type="submit">Gruppe erstellen</button>
     </form>
-
-    <form class="card stack section" id="join">
-      <h2>Gruppe beitreten</h2>
-      <input type="text" id="gcode" placeholder="Einladungscode" maxlength="20" required style="text-transform:uppercase">
-      <button class="btn ghost block" type="submit">Beitreten</button>
-    </form>`;
-  bindLogout();
-
-  app.querySelector("#create").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    try {
-      const { id } = await api("/groups", { method: "POST", body: { name: app.querySelector("#gname").value } });
-      await refreshMe();
-      navigate(`/g/${id}`);
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-  app.querySelector("#join").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    joinGroup(app.querySelector("#gcode").value);
-  });
+    <div class="section" style="margin-top:26px">
+      <div class="section-head"><span class="h2">Oder beitreten</span></div>
+      <form id="join" style="display:flex;gap:10px">
+        <input class="input" id="gcode" placeholder="Einladungscode" maxlength="20" required style="text-transform:uppercase;flex:1">
+        <button class="btn ghost" type="submit">Beitreten</button>
+      </form>
+    </div>`,
+    (el) => {
+      el.querySelectorAll("[data-e]").forEach((b) =>
+        b.addEventListener("click", () => {
+          emoji = b.dataset.e;
+          el.querySelectorAll("[data-e]").forEach((x) => x.classList.toggle("active", x === b));
+        }),
+      );
+      el.querySelector("#create").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector("button[type=submit]");
+        btn.disabled = true;
+        try {
+          const { id } = await api("/groups", { method: "POST", body: { name: el.querySelector("#gname").value, emoji } });
+          await refreshMe();
+          closeSheet();
+          navigate(`/g/${id}`);
+          toast("Gruppe erstellt – lade jetzt deine Leute ein!");
+        } catch (err) {
+          toast(err.message);
+          btn.disabled = false;
+        }
+      });
+      el.querySelector("#join").addEventListener("submit", (e) => {
+        e.preventDefault();
+        closeSheet();
+        joinGroup(el.querySelector("#gcode").value);
+      });
+    },
+  );
 }
 
 async function joinGroup(code) {
@@ -190,228 +393,508 @@ async function joinGroup(code) {
     const { id } = await api("/groups/join", { method: "POST", body: { code } });
     await refreshMe();
     navigate(`/g/${id}`, true);
-    toast("Willkommen in der Gruppe!");
+    toast("Willkommen in der Gruppe! 🎉");
   } catch (err) {
     toast(err.message);
     navigate("/", true);
   }
 }
 
-// Greedy minimal set of transfers to settle all balances.
-function settlements(members) {
-  const debtors = members.filter((m) => m.balance < 0).map((m) => ({ ...m, rest: -m.balance }));
-  const creditors = members.filter((m) => m.balance > 0).map((m) => ({ ...m, rest: m.balance }));
-  debtors.sort((a, b) => b.rest - a.rest);
-  creditors.sort((a, b) => b.rest - a.rest);
-  const out = [];
-  let i = 0, j = 0;
-  while (i < debtors.length && j < creditors.length) {
-    const x = Math.min(debtors[i].rest, creditors[j].rest);
-    if (x > 0) out.push({ from: debtors[i], to: creditors[j], cents: x });
-    debtors[i].rest -= x;
-    creditors[j].rest -= x;
-    if (!debtors[i].rest) i++;
-    if (!creditors[j].rest) j++;
+// ---------- friends ----------
+function friendsView() {
+  const people = new Map();
+  for (const g of state.groups) {
+    for (const m of g.members) if (m.id !== state.user.id && !people.has(m.id)) people.set(m.id, { ...m, cents: 0, groups: [] });
+    for (const d of myDebts(g.members)) {
+      const p = people.get(d.person.id);
+      p.cents += d.cents;
+      p.groups.push(g.name);
+    }
   }
-  return out;
+  const list = [...people.values()].sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents) || a.name.localeCompare(b.name));
+  shell(
+    `
+    <header class="header"><h1 class="page-title">Freunde</h1></header>
+    ${heroCard()}
+    <div class="section">
+      ${
+        list.length
+          ? `<div class="rows fade-in">${list
+              .map(
+                (p) => `
+            <div class="row" style="cursor:default">
+              ${avatar(p, 50)}
+              <div class="grow">
+                <div class="row-title">${esc(p.name)}</div>
+                ${p.groups.length ? `<div class="row-sub">${esc(p.groups.join(", "))}</div>` : ""}
+              </div>
+              ${statusHtml(p.cents, { me: false })}
+            </div>`,
+              )
+              .join("")}</div>`
+          : `<div class="empty"><div class="big">🫂</div><b>Noch niemand hier</b>Teile den Einladungslink einer Gruppe – alle, die beitreten, erscheinen hier.</div>`
+      }
+    </div>`,
+    { nav: "/freunde" },
+  );
 }
+
+// ---------- activity ----------
+async function activityView() {
+  shell(`<header class="header"><h1 class="page-title">Aktivität</h1></header><div class="loading"><div class="spinner"></div></div>`, { nav: "/aktivitaet" });
+  let items;
+  try {
+    ({ items } = await api("/activity"));
+  } catch (err) {
+    return toast(err.message);
+  }
+  if (location.pathname !== "/aktivitaet") return;
+  const me = state.user.id;
+  const who = (id, name) => (id === me ? "Du" : esc(name));
+  const html = items
+    .map((it) => {
+      const g = { id: it.group_id, emoji: it.emoji };
+      let text, effect = "";
+      if (it.type === "expense") {
+        if (it.is_settlement) {
+          text = `<b>${who(it.paid_by, it.payer_name)}</b> ${it.paid_by === me ? "hast" : "hat"} eine Zahlung über <b>${fmt(it.amount_cents)}</b> in „<b>${esc(it.group_name)}</b>“ eingetragen.`;
+        } else {
+          text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} „<b>${esc(it.title)}</b>“ in „<b>${esc(it.group_name)}</b>“ hinzugefügt.`;
+        }
+        const net = (it.paid_by === me ? it.amount_cents : 0) - (it.my_share ?? 0);
+        if (net > 0) effect = `<div class="effect pos money">Du bekommst ${fmt(net)} zurück</div>`;
+        else if (net < 0) effect = `<div class="effect neg money">Du schuldest ${fmt(-net)}</div>`;
+        else effect = `<div class="effect faint">Nicht beteiligt</div>`;
+      } else if (it.type === "created") {
+        text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} die Gruppe „<b>${esc(it.group_name)}</b>“ erstellt.`;
+      } else {
+        text = it.actor_id === me
+          ? `<b>Du</b> bist der Gruppe „<b>${esc(it.group_name)}</b>“ beigetreten.`
+          : `<b>${esc(it.actor_name)}</b> ist der Gruppe „<b>${esc(it.group_name)}</b>“ beigetreten.`;
+      }
+      return `
+        <a class="activity" href="/g/${it.group_id}" data-link>
+          <div class="avatar-wrap">${groupTile(g, "sm")}<span class="badge">${avatar({ id: it.actor_id, name: it.actor_name }, 24)}</span></div>
+          <div class="grow">${text}${effect}<div class="when">${ago(it.at)}</div></div>
+        </a>`;
+    })
+    .join("");
+  app.querySelector(".loading").outerHTML = items.length
+    ? `<div class="fade-in">${html}</div>`
+    : `<div class="empty"><div class="big">📭</div><b>Noch nichts passiert</b>Sobald jemand Ausgaben einträgt, siehst du es hier.</div>`;
+}
+
+// ---------- account ----------
+function accountView() {
+  const u = state.user;
+  const { net } = totals();
+  shell(
+    `
+    <header class="header"><h1 class="page-title">Konto</h1></header>
+    <div class="account-head fade-in">
+      ${avatar(u, 92)}
+      <h1>${esc(u.name)}</h1>
+      <p class="muted">${state.groups.length} ${state.groups.length === 1 ? "Gruppe" : "Gruppen"} · ${net >= 0 ? "bekommst" : "schuldest"} <b class="${net >= 0 ? "pos" : "neg"} money">${fmt(Math.abs(net))}</b></p>
+    </div>
+    <div class="section">
+      <div class="menu">
+        <button class="menu-item" id="add-home">${icon("share")}<span class="grow">Zum Home-Bildschirm hinzufügen</span>${icon("chev")}</button>
+        <button class="menu-item danger" id="logout">${icon("logout")}<span class="grow">Abmelden</span></button>
+      </div>
+    </div>`,
+    { nav: "/konto" },
+  );
+  app.querySelector("#logout").addEventListener("click", async () => {
+    await api("/logout", { method: "POST" }).catch(() => {});
+    state.user = null;
+    state.groups = [];
+    navigate("/", true);
+  });
+  app.querySelector("#add-home").addEventListener("click", () =>
+    openSheet(
+      "Als App installieren",
+      `<div class="stack muted">
+        <p><b style="color:var(--text)">iPhone (Safari):</b> Tippe unten auf <b style="color:var(--text)">Teilen</b> und dann auf <b style="color:var(--text)">„Zum Home-Bildschirm“</b>.</p>
+        <p><b style="color:var(--text)">Android (Chrome):</b> Tippe oben rechts auf <b style="color:var(--text)">⋮</b> und dann auf <b style="color:var(--text)">„App installieren“</b>.</p>
+      </div>`,
+    ),
+  );
+}
+
+// ---------- group detail ----------
+const groupCache = new Map();
+let groupTab = "expenses";
 
 async function groupView(id) {
-  app.innerHTML = `${topbar()}<div class="loading">Lädt …</div>`;
-  bindLogout();
-  let data;
+  const cached = groupCache.get(id);
+  if (cached) drawGroup(cached);
+  else shell(`<div class="loading"><div class="spinner"></div></div>`, { fab: false });
   try {
-    data = await api(`/groups/${id}`);
+    const data = await api(`/groups/${id}`);
+    groupCache.set(id, data);
+    if (location.pathname === `/g/${id}`) drawGroup(data);
   } catch (err) {
     toast(err.message);
-    return navigate("/", true);
+    navigate("/", true);
   }
-  drawGroup(data);
 }
 
-function drawGroup({ group, members, expenses }) {
-  const me = state.user;
+function updateGroup(data) {
+  groupCache.set(String(data.group.id), data);
+  const g = state.groups.find((x) => x.id === data.group.id);
+  if (g) {
+    g.members = data.members.map((m) => ({ id: m.id, name: m.name, balance: m.balance }));
+    g.expense_count = data.expenses.length;
+  }
+  if (location.pathname === `/g/${data.group.id}`) drawGroup(data);
+}
+
+function myNet(e) {
+  const me = state.user.id;
+  const mine = e.shares.find((s) => s.user_id === me)?.cents ?? 0;
+  return (e.paid_by === me ? e.amount_cents : 0) - mine;
+}
+
+function drawGroup(data) {
+  const { group, members, expenses } = data;
+  const me = members.find((m) => m.id === state.user.id);
   const byId = Object.fromEntries(members.map((m) => [m.id, m]));
-  const total = expenses.reduce((s, e) => s + e.amount_cents, 0);
+  const total = expenses.filter((e) => !e.is_settlement).reduce((s, e) => s + e.amount_cents, 0);
   const transfers = settlements(members);
-  const inviteUrl = `${location.origin}/join/${group.invite_code}`;
 
-  app.innerHTML = `
-    ${topbar()}
-    <a href="/" data-link class="back">‹ Gruppen</a>
-    <div style="margin:10px 0 4px"><h1>${esc(group.name)}</h1></div>
-    <p class="muted">${members.length} ${members.length === 1 ? "Person" : "Personen"} · Gesamt ${fmt(total)}</p>
+  let lastMonth = "";
+  const expenseRows = expenses
+    .map((e) => {
+      const d = new Date(e.created_at);
+      const month = d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+      const header = month !== lastMonth ? `<div class="month">${month}</div>` : "";
+      lastMonth = month;
+      const payer = byId[e.paid_by]?.name ?? "?";
+      const net = myNet(e);
+      const right = e.is_settlement
+        ? `<div class="status none"><div class="lbl">Zahlung</div></div>`
+        : net
+          ? statusHtml(net)
+          : `<div class="status none"><div class="lbl">nicht beteiligt</div></div>`;
+      const sub = e.is_settlement
+        ? `${esc(payer)} → ${esc(byId[e.shares[0]?.user_id]?.name ?? "?")} · ${fmt(e.amount_cents)}`
+        : `${e.paid_by === state.user.id ? "Du" : esc(firstName(payer))} · ${fmt(e.amount_cents)}`;
+      return `${header}
+        <div class="row" data-exp="${e.id}">
+          <div class="date-block"><div class="m">${MONTHS[d.getMonth()]}</div><div class="d">${String(d.getDate()).padStart(2, "0")}</div></div>
+          <div class="receipt ${e.is_settlement ? "settle" : ""}">${icon(e.is_settlement ? "swap" : "receipt")}</div>
+          <div class="grow"><div class="row-title" style="font-size:16px">${esc(e.title)}</div><div class="row-sub money">${sub}</div></div>
+          ${right}
+        </div>`;
+    })
+    .join("");
 
-    <div class="invite section" style="margin-top:16px">
-      <div>
-        <div class="muted small">Einladungscode</div>
-        <div class="code">${esc(group.invite_code)}</div>
-      </div>
-      <button class="btn small" id="share">Link teilen</button>
+  const balanceCards = members
+    .map(
+      (m) => `
+      <div class="card balance-card">
+        <div class="balance-top">
+          ${avatar(m, 42)}
+          <div class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}</div>
+          ${m.balance ? `<div class="status ${m.balance > 0 ? "pos" : "neg"}"><div class="lbl">${m.balance > 0 ? "bekommt" : "schuldet"}</div><div class="amt money">${fmt(Math.abs(m.balance))}</div></div>`
+                      : `<div class="status settled"><div class="lbl">quitt</div></div>`}
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="lbl">Ausgegeben</div><div class="val money">${fmt(m.paid)}</div></div>
+          <div class="stat"><div class="lbl">Anteil gesamt</div><div class="val money">${fmt(m.share)}</div></div>
+        </div>
+      </div>`,
+    )
+    .join("");
+
+  const transferRows = transfers
+    .map(
+      (t, i) => `
+      <div class="transfer">
+        ${avatar(t.from, 32)}
+        <div class="grow"><b>${esc(t.from.id === state.user.id ? "Du" : firstName(t.from.name))}</b> → <b>${esc(t.to.id === state.user.id ? "dir" : firstName(t.to.name))}</b><div class="money ${t.to.id === state.user.id ? "pos" : t.from.id === state.user.id ? "neg" : "muted"}" style="font-weight:800">${fmt(t.cents)}</div></div>
+        <button class="btn ghost sm" data-settle="${i}">Begleichen</button>
+      </div>`,
+    )
+    .join("");
+
+  shell(
+    `
+    <header class="header">
+      <a href="/" data-link class="round-btn" aria-label="Zurück">${icon("back")}</a>
+      <button class="pill-btn" id="invite">${icon("share")} Einladen</button>
+    </header>
+    <div class="group-head">
+      ${groupTile(group, "lg")}
+      <h1>${esc(group.name)}</h1>
+      <div class="avatar-stack">${members.slice(0, 6).map((m) => avatar(m, 30)).join("")}</div>
+      <p class="muted small">${members.length} ${members.length === 1 ? "Person" : "Personen"} · Gesamtausgaben <b style="color:var(--text)" class="money">${fmt(total)}</b></p>
     </div>
+    <section class="hero" style="padding:18px 20px">
+      <div class="hero-label">${!me?.balance ? "Du bist in dieser Gruppe quitt" : me.balance > 0 ? "Du bekommst in dieser Gruppe" : "Du schuldest in dieser Gruppe"}</div>
+      ${me?.balance ? `<div class="hero-amount money ${me.balance > 0 ? "pos" : "neg"}" style="font-size:34px">${fmt(Math.abs(me.balance))}</div>` : ""}
+      <div class="hero-sub">
+        <span>Ausgegeben <b class="money">${fmt(me?.paid ?? 0)}</b></span>
+        <span>Dein Anteil <b class="money">${fmt(me?.share ?? 0)}</b></span>
+      </div>
+    </section>
+    <div class="segmented mt">
+      <button data-tab="expenses" class="${groupTab === "expenses" ? "active" : ""}">Ausgaben</button>
+      <button data-tab="balances" class="${groupTab === "balances" ? "active" : ""}">Übersicht</button>
+    </div>
+    <div id="tab" class="fade-in">
+      ${
+        groupTab === "expenses"
+          ? expenses.length
+            ? `<div class="rows">${expenseRows}</div>`
+            : `<div class="empty mt"><div class="big">🧾</div><b>Noch keine Ausgaben</b>${members.length < 2 ? "Lade erst deine Leute ein – dann kann's losgehen." : "Tippe auf „Ausgabe hinzufügen“."}</div>`
+          : `<div class="mt">${balanceCards}</div>
+             ${transfers.length ? `<div class="section"><div class="section-head"><span class="h2">So wird's ausgeglichen</span></div><div class="card" style="padding:6px 14px">${transferRows}</div></div>` : ""}`
+      }
+    </div>
+    <div class="section" style="text-align:center">
+      <span class="faint small">Einladungscode <b class="money" style="letter-spacing:.12em;color:var(--muted)">${esc(group.invite_code)}</b></span>
+    </div>`,
+    { fab: group.id },
+  );
 
-    <form class="card stack section" id="expense">
-      <h2>Neue Ausgabe</h2>
-      <div>
-        <label for="title">Titel</label>
-        <input type="text" id="title" placeholder="z. B. Einkauf, Pizza, Tanken …" maxlength="100" required>
-      </div>
-      <div>
-        <label for="amount">Betrag</label>
-        <div class="amount-input">
-          <input type="text" id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off">
-          <span>€</span>
-        </div>
-      </div>
-      <div>
-        <label for="paid">Bezahlt von</label>
-        <select id="paid">
-          ${members.map((m) => `<option value="${m.id}" ${m.id === me.id ? "selected" : ""}>${esc(m.name)}${m.id === me.id ? " (du)" : ""}</option>`).join("")}
-        </select>
-      </div>
-      <div>
-        <label>Betrifft</label>
-        <div class="checks">
-          ${members
-            .map(
-              (m) => `
-            <label class="check"><input type="checkbox" name="p" value="${m.id}" checked>${esc(m.name)}</label>`,
-            )
-            .join("")}
-        </div>
-        <p class="muted small" id="per" style="margin-top:8px"></p>
-      </div>
-      <button class="btn block" type="submit">Ausgabe speichern</button>
-    </form>
+  app.querySelectorAll("[data-tab]").forEach((b) =>
+    b.addEventListener("click", () => {
+      groupTab = b.dataset.tab;
+      drawGroup(data);
+    }),
+  );
+  app.querySelectorAll("[data-exp]").forEach((r) =>
+    r.addEventListener("click", () => expenseDetail(data, expenses.find((e) => String(e.id) === r.dataset.exp))),
+  );
+  app.querySelectorAll("[data-settle]").forEach((b) =>
+    b.addEventListener("click", () => settleSheet(group, transfers[Number(b.dataset.settle)])),
+  );
+  app.querySelector("#invite").addEventListener("click", () => inviteSheet(group));
+}
 
-    <div class="section">
-      <div class="section-head"><h2>Übersicht</h2></div>
-      <div class="balances">
-        ${members
+function inviteSheet(group) {
+  const url = `${location.origin}/join/${group.invite_code}`;
+  openSheet(
+    "Leute einladen",
+    `
+    <div style="text-align:center">
+      <p class="muted">Schick diesen Link an deine Freunde. Wer ihn öffnet und sich anmeldet, ist direkt in „${esc(group.name)}“.</p>
+      <div class="card mt" style="padding:18px">
+        <div class="h2">Einladungscode</div>
+        <div class="money" style="font-size:34px;font-weight:800;letter-spacing:.16em;margin-top:6px">${esc(group.invite_code)}</div>
+      </div>
+      <button class="btn block mt" id="share-link">${icon("share")} Link teilen</button>
+      <button class="btn ghost block" id="copy-link" style="margin-top:10px">${icon("link")} Link kopieren</button>
+    </div>`,
+    (el) => {
+      const copy = async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast("Link kopiert ✓");
+        } catch {
+          prompt("Link kopieren:", url);
+        }
+      };
+      el.querySelector("#copy-link").addEventListener("click", copy);
+      el.querySelector("#share-link").addEventListener("click", () => {
+        if (navigator.share) navigator.share({ title: group.name, text: `Komm in „${group.name}“ bei Better Have My Money 💸`, url }).catch(() => {});
+        else copy();
+      });
+    },
+  );
+}
+
+function expenseDetail(data, e) {
+  const byId = Object.fromEntries(data.members.map((m) => [m.id, m]));
+  const d = new Date(e.created_at);
+  const payer = byId[e.paid_by];
+  openSheet(
+    e.is_settlement ? "Zahlung" : "Ausgabe",
+    `
+    <div style="display:flex;gap:14px;align-items:center">
+      <div class="receipt ${e.is_settlement ? "settle" : ""}" style="width:56px;height:56px">${icon(e.is_settlement ? "swap" : "receipt")}</div>
+      <div style="min-width:0">
+        <div style="font-size:20px;font-weight:800">${esc(e.title)}</div>
+        <div class="money" style="font-size:28px;font-weight:800">${fmt(e.amount_cents)}</div>
+      </div>
+    </div>
+    <p class="muted small mt">Eingetragen von ${esc(byId[e.created_by]?.name ?? "?")} am ${d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>
+    <div class="people mt">
+      <div class="person" style="cursor:default">${avatar(payer ?? { id: 0, name: "?" }, 34)}<span class="grow">${esc(payer?.name ?? "?")} hat ${fmt(e.amount_cents)} bezahlt</span></div>
+      ${e.shares
+        .map((s) => `<div class="person" style="cursor:default;padding-left:30px">${avatar(byId[s.user_id] ?? { id: s.user_id, name: "?" }, 28)}<span class="grow muted" style="font-weight:500">${esc(byId[s.user_id]?.name ?? "?")} ${e.is_settlement ? "hat erhalten" : "schuldet"}</span><span class="share">${fmt(s.cents)}</span></div>`)
+        .join("")}
+    </div>
+    <button class="btn danger block mt" id="del">${icon("trash")} Löschen</button>`,
+    (el) =>
+      el.querySelector("#del").addEventListener("click", async () => {
+        if (!confirm(`„${e.title}“ wirklich löschen?`)) return;
+        try {
+          updateGroup(await api(`/expenses/${e.id}`, { method: "DELETE" }));
+          closeSheet();
+          toast("Gelöscht");
+        } catch (err) {
+          toast(err.message);
+        }
+      }),
+  );
+}
+
+function settleSheet(group, t) {
+  const me = state.user.id;
+  const fromName = t.from.id === me ? "Du" : t.from.name;
+  const toName = t.to.id === me ? "dir" : t.to.name;
+  openSheet(
+    "Schulden begleichen",
+    `
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin:4px 0 18px">
+      ${avatar(t.from, 60)}<span class="muted">${icon("chev")}</span>${avatar(t.to, 60)}
+    </div>
+    <p style="text-align:center;font-size:17px"><b>${esc(fromName)}</b> ${t.from.id === me ? "zahlst" : "zahlt"} <b>${esc(toName)}</b></p>
+    <div class="amount-field mt"><input id="amt" inputmode="decimal" value="${(t.cents / 100).toFixed(2).replace(".", ",")}"><span>€</span></div>
+    <p class="muted small" style="text-align:center;margin-top:10px">Trag das ein, wenn das Geld wirklich geflossen ist (bar, PayPal, Überweisung …).</p>
+    <button class="btn block mt" id="ok">Zahlung eintragen</button>`,
+    (el) =>
+      el.querySelector("#ok").addEventListener("click", async (ev) => {
+        const cents = parseAmount(el.querySelector("#amt").value);
+        if (!cents) return toast("Bitte einen gültigen Betrag eingeben");
+        ev.target.disabled = true;
+        try {
+          const data = await api(`/groups/${group.id}/expenses`, {
+            method: "POST",
+            body: { title: "Ausgleich", amount_cents: cents, paid_by: t.from.id, participants: [t.to.id], is_settlement: true },
+          });
+          updateGroup(data);
+          closeSheet();
+          toast("Zahlung eingetragen ✓");
+        } catch (err) {
+          toast(err.message);
+          ev.target.disabled = false;
+        }
+      }),
+  );
+}
+
+// ---------- add expense ----------
+function parseAmount(raw) {
+  let v = String(raw).replace(/[\s€]/g, "");
+  if (v.includes(",")) v = v.replace(/\./g, "").replace(",", ".");
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+}
+
+async function expenseSheet(presetGroupId) {
+  let groupId = presetGroupId ?? (state.groups.length === 1 ? state.groups[0].id : null);
+  const body = openSheet(
+    "Neue Ausgabe",
+    `
+    ${presetGroupId ? "" : `
+      <div class="field"><span class="field-label">Gruppe</span>
+        <div class="chips">${state.groups
+          .map((g) => `<button type="button" class="chip ${g.id === groupId ? "active" : ""}" data-g="${g.id}"><span style="font-size:18px">${esc(g.emoji)}</span>${esc(g.name)}</button>`)
+          .join("")}</div>
+      </div>`}
+    <form id="exp">
+      <label class="field"><span class="field-label">Titel</span>
+        <div class="input-icon">${icon("tag")}<input class="input" id="title" placeholder="z. B. Einkauf, Pizza, Tanken …" maxlength="100" required autocomplete="off"></div></label>
+      <div class="field"><span class="field-label">Betrag</span>
+        <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off"><span>€</span></label></div>
+      <div id="who"></div>
+      <button class="btn block mt" type="submit" id="save">Ausgabe speichern</button>
+    </form>`,
+  );
+
+  const who = body.querySelector("#who");
+  const amountEl = body.querySelector("#amount");
+  let members = [];
+
+  const updateShares = () => {
+    const checked = [...who.querySelectorAll(".check:checked")].map((c) => Number(c.value));
+    const cents = parseAmount(amountEl.value);
+    const n = checked.length;
+    who.querySelectorAll(".person").forEach((p) => {
+      const on = p.querySelector(".check").checked;
+      const idx = checked.indexOf(Number(p.querySelector(".check").value));
+      const share = on && n && cents ? Math.floor(cents / n) + (idx < cents % n ? 1 : 0) : 0;
+      p.querySelector(".share").textContent = on && cents ? fmt(share) : "";
+    });
+    const all = who.querySelector("#all");
+    if (all) all.textContent = n === members.length ? "Keinen" : "Alle";
+    const hint = who.querySelector("#hint");
+    if (hint) hint.textContent = n ? `Geteilt durch ${n} ${n === 1 ? "Person" : "Personen"}` : "Wähl mindestens eine Person aus";
+  };
+
+  const loadMembers = async () => {
+    if (!groupId) {
+      who.innerHTML = `<p class="muted small mt" style="text-align:center">Wähl zuerst eine Gruppe aus.</p>`;
+      return;
+    }
+    const cached = groupCache.get(String(groupId));
+    members = cached?.members ?? state.groups.find((g) => g.id === groupId)?.members ?? [];
+    who.innerHTML = `
+      <label class="field"><span class="field-label">Bezahlt von</span>
+        <select class="select" id="paid">${members
+          .map((m) => `<option value="${m.id}" ${m.id === state.user.id ? "selected" : ""}>${esc(m.name)}${m.id === state.user.id ? " (du)" : ""}</option>`)
+          .join("")}</select></label>
+      <div class="field">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="field-label">Betrifft</span><button type="button" class="link-btn" id="all">Keinen</button>
+        </div>
+        <div class="people">${members
           .map(
             (m) => `
-          <div class="card balance-card">
-            <div class="balance-top">
-              ${avatar(m)}
-              <div class="grow">
-                <div class="title" style="font-weight:700">${esc(m.name)}${m.id === me.id ? ' <span class="muted small">(du)</span>' : ""}</div>
-              </div>
-              <div class="balance-amount ${m.balance > 0 ? "pos" : m.balance < 0 ? "neg" : "muted"}">
-                <span class="lbl">${m.balance > 0 ? "bekommt" : m.balance < 0 ? "schuldet" : "ausgeglichen"}</span>
-                ${fmt(Math.abs(m.balance))}
-              </div>
-            </div>
-            <div class="stats">
-              <div class="stat"><div class="lbl">Ausgegeben</div><div class="val">${fmt(m.paid)}</div></div>
-              <div class="stat"><div class="lbl">Anteil gesamt</div><div class="val">${fmt(m.share)}</div></div>
-            </div>
-          </div>`,
+          <label class="person">${avatar(m, 34)}<span class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}</span>
+            <span class="share"></span><input type="checkbox" class="check" value="${m.id}" checked></label>`,
           )
-          .join("")}
-      </div>
-    </div>
-
-    ${
-      transfers.length
-        ? `<div class="section">
-      <div class="section-head"><h2>So wird's ausgeglichen</h2></div>
-      <div class="card stack">
-        ${transfers
-          .map(
-            (t) => `<div class="settle">${esc(t.from.name)} <span class="arrow">→</span> ${esc(t.to.name)} <strong>${fmt(t.cents)}</strong></div>`,
-          )
-          .join("")}
-      </div>
-    </div>`
-        : ""
-    }
-
-    <div class="section">
-      <div class="section-head"><h2>Ausgaben</h2><span class="muted small">${expenses.length}</span></div>
-      <div class="list">
-        ${
-          expenses.length
-            ? expenses
-                .map((e) => {
-                  const payer = byId[e.paid_by];
-                  const names = e.shares.map((s) => byId[s.user_id]?.name ?? "?");
-                  const forAll = e.shares.length === members.length;
-                  return `
-          <div class="list-item expense" style="cursor:default">
-            <div class="expense-icon">🧾</div>
-            <div class="grow">
-              <div class="title">${esc(e.title)}</div>
-              <div class="meta">${esc(payer?.name ?? "?")} hat bezahlt · für ${forAll ? "alle" : esc(names.join(", "))}</div>
-              <div class="meta">${new Date(e.created_at).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" })}</div>
-            </div>
-            <div class="amount">${fmt(e.amount_cents)}</div>
-            <button class="icon-btn" data-del="${e.id}" title="Löschen">✕</button>
-          </div>`;
-                })
-                .join("")
-            : `<div class="card empty">Noch keine Ausgaben eingetragen.</div>`
-        }
-      </div>
-    </div>`;
-  bindLogout();
-
-  const form = app.querySelector("#expense");
-  const amountEl = form.querySelector("#amount");
-  const per = form.querySelector("#per");
-  const parseAmount = () => {
-    const v = amountEl.value.replace(/\s|€/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+          .join("")}</div>
+        <p class="faint small" id="hint" style="margin:8px 2px 0"></p>
+      </div>`;
+    who.querySelector("#all").addEventListener("click", () => {
+      const boxes = [...who.querySelectorAll(".check")];
+      const allOn = boxes.every((c) => c.checked);
+      boxes.forEach((c) => (c.checked = !allOn));
+      updateShares();
+    });
+    updateShares();
   };
-  const checked = () => [...form.querySelectorAll("input[name=p]:checked")].map((c) => Number(c.value));
-  const updatePer = () => {
-    const n = checked().length;
-    const cents = parseAmount();
-    per.textContent = n && cents ? `${fmt(Math.floor(cents / n))} pro Person (${n})` : n ? `${n} ${n === 1 ? "Person" : "Personen"}` : "Niemand ausgewählt";
-  };
-  form.addEventListener("input", updatePer);
-  updatePer();
 
-  form.addEventListener("submit", async (e) => {
+  body.querySelectorAll("[data-g]").forEach((b) =>
+    b.addEventListener("click", () => {
+      groupId = Number(b.dataset.g);
+      body.querySelectorAll("[data-g]").forEach((x) => x.classList.toggle("active", x === b));
+      loadMembers();
+    }),
+  );
+  body.addEventListener("input", updateShares);
+  body.addEventListener("change", updateShares);
+  await loadMembers();
+  setTimeout(() => body.querySelector("#title")?.focus(), 300);
+
+  body.querySelector("#exp").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const amount_cents = parseAmount();
-    const participants = checked();
+    if (!groupId) return toast("Bitte eine Gruppe auswählen");
+    const amount_cents = parseAmount(amountEl.value);
+    const participants = [...who.querySelectorAll(".check:checked")].map((c) => Number(c.value));
     if (!amount_cents) return toast("Bitte einen gültigen Betrag eingeben");
     if (!participants.length) return toast("Mindestens eine Person auswählen");
-    const btn = form.querySelector("button[type=submit]");
+    const btn = body.querySelector("#save");
     btn.disabled = true;
     try {
-      const data = await api(`/groups/${group.id}/expenses`, {
+      const data = await api(`/groups/${groupId}/expenses`, {
         method: "POST",
-        body: { title: form.querySelector("#title").value, amount_cents, paid_by: Number(form.querySelector("#paid").value), participants },
+        body: { title: body.querySelector("#title").value, amount_cents, paid_by: Number(who.querySelector("#paid").value), participants },
       });
-      drawGroup(data);
+      updateGroup(data);
+      closeSheet();
       toast("Ausgabe gespeichert ✓");
+      if (location.pathname !== `/g/${groupId}`) {
+        groupTab = "expenses";
+        navigate(`/g/${groupId}`);
+      }
     } catch (err) {
       toast(err.message);
       btn.disabled = false;
-    }
-  });
-
-  app.querySelectorAll("[data-del]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      if (!confirm("Diese Ausgabe löschen?")) return;
-      try {
-        drawGroup(await api(`/expenses/${b.dataset.del}`, { method: "DELETE" }));
-        toast("Gelöscht");
-      } catch (err) {
-        toast(err.message);
-      }
-    }),
-  );
-
-  app.querySelector("#share").addEventListener("click", async () => {
-    const text = `Komm in unsere Gruppe „${group.name}“ bei Better Have My Money:`;
-    if (navigator.share) {
-      navigator.share({ title: group.name, text, url: inviteUrl }).catch(() => {});
-    } else {
-      await navigator.clipboard?.writeText(inviteUrl).catch(() => {});
-      toast("Einladungslink kopiert");
     }
   });
 }
@@ -420,26 +903,45 @@ function drawGroup({ group, members, expenses }) {
 async function render() {
   const path = location.pathname;
   const join = path.match(/^\/join\/([A-Za-z0-9]+)/);
-  if (join) sessionStorage.setItem("pendingJoin", join[1].toUpperCase());
+  if (join) {
+    store.set("pendingJoin", join[1].toUpperCase());
+    history.replaceState({}, "", "/");
+  }
 
-  if (!state.user) return authView(sessionStorage.getItem("pendingJoin"));
+  if (!state.user) return authView(store.get("pendingJoin"));
 
-  const pending = sessionStorage.getItem("pendingJoin");
+  const pending = store.get("pendingJoin");
   if (pending) {
-    sessionStorage.removeItem("pendingJoin");
+    store.del("pendingJoin");
     return joinGroup(pending);
   }
 
   const g = path.match(/^\/g\/(\d+)/);
   if (g) return groupView(g[1]);
+  if (path === "/freunde") return friendsView();
+  if (path === "/aktivitaet") return activityView();
+  if (path === "/konto") return accountView();
   if (path !== "/") history.replaceState({}, "", "/");
-  homeView();
+  groupsView();
+  refreshMe()
+    .then(() => location.pathname === "/" && !currentSheet && groupsViewIfChanged())
+    .catch(() => {});
+}
+
+let lastGroupsJson = "";
+function groupsViewIfChanged() {
+  const j = JSON.stringify(state.groups);
+  if (j !== lastGroupsJson) {
+    lastGroupsJson = j;
+    groupsView();
+  }
 }
 
 (async () => {
-  app.innerHTML = `<div class="loading">Lädt …</div>`;
+  app.innerHTML = `<div class="loading" style="min-height:100dvh"><div class="spinner"></div></div>`;
   try {
     await refreshMe();
+    lastGroupsJson = JSON.stringify(state.groups);
   } catch {
     /* not logged in or offline */
   }

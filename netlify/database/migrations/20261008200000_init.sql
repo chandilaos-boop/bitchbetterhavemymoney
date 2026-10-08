@@ -15,6 +15,7 @@ CREATE TABLE sessions (
 CREATE TABLE groups (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
+  emoji TEXT NOT NULL DEFAULT '💸',
   invite_code TEXT NOT NULL UNIQUE,
   created_by INTEGER NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -34,6 +35,7 @@ CREATE TABLE expenses (
   amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
   paid_by INTEGER NOT NULL REFERENCES users(id),
   created_by INTEGER NOT NULL REFERENCES users(id),
+  is_settlement BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX expenses_group_idx ON expenses (group_id, created_at DESC);
