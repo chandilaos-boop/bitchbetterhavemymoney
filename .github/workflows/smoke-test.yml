@@ -15,3 +15,6 @@ jobs:
           # A bogus session cookie forces a query against the sessions table without writing anything.
           curl -sS -w "\napi %{http_code}\n" -H "Cookie: bbhmm_session=smoke-test" "$URL/api/me" | tee out.txt
           grep -q '"user":null' out.txt
+          # Unknown reset token: 404 means the password_resets table exists, 500 would mean it is missing.
+          curl -sS -w "\nreset %{http_code}\n" "$URL/api/reset/smoke-test-token" | tee out2.txt
+          grep -q "abgelaufen" out2.txt
