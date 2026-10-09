@@ -403,7 +403,7 @@ function authView(pendingCode) {
           <div class="auth-brand">
             <div class="logo-wrap">
               <span class="orbit o1">💸</span><span class="orbit o2">🍕</span><span class="orbit o3">🍻</span><span class="orbit o4">🪙</span>
-              <div class="logo">€</div>
+              <div class="logo"><img src="/icons/logo.webp" alt="Better Have My Money"></div>
             </div>
             <h1>Better Have<br><span class="shimmer">My Money</span></h1>
             <p>Geld teilen unter Freunden – ohne Excel, ohne Drama, ohne „Ich zahl dir's nächste Woche“. 🎤</p>
@@ -485,7 +485,7 @@ function groupsView() {
   shell(
     `
     <header class="header">
-      <div><h1 class="page-title">Gruppen</h1><p class="greet">${greeting()}</p></div>
+      <div class="title-with-logo"><img class="mini-logo" src="/icons/logo.webp" alt=""><div><h1 class="page-title">Gruppen</h1><p class="greet">${greeting()}</p></div></div>
       <button class="pill-btn" id="new-group">${icon("plus")} Gruppe</button>
     </header>
     ${heroCard()}
@@ -1190,7 +1190,7 @@ function resetView(token) {
         <div class="shell no-nav">
           <div class="auth fade-in">
             <div class="auth-brand">
-              <div class="logo-wrap"><span class="orbit o1">🔑</span><span class="orbit o3">✨</span><div class="logo">€</div></div>
+              <div class="logo-wrap"><span class="orbit o1">🔑</span><span class="orbit o3">✨</span><div class="logo"><img src="/icons/logo.webp" alt="Better Have My Money"></div></div>
               <h1>Hi ${esc(firstName(name))}! 👋</h1>
               <p>${esc(creator)} hat dir diesen Link geschickt. Setz einfach ein neues Passwort – diesmal merken 😉</p>
             </div>
