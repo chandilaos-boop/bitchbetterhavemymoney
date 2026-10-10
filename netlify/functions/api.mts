@@ -294,6 +294,74 @@ async function route(req: Request, context: Context): Promise<Response> {
     return json(await groupDetails(groupId), 201);
   }
 
+  // Edit an expense. People who already took part stay selectable even if they left the group since.
+  if ((m = path.match(/^\/expenses\/(\d+)$/)) && method === "PUT") {
+    const user = await requireUser(context);
+    const expenseId = Number(m[1]);
+    const [expense] = await db.sql<{ group_id: number; paid_by: number; is_settlement: boolean }>`
+      SELECT group_id, paid_by, is_settlement FROM expenses WHERE id = ${expenseId}`;
+    if (!expense) throw new HttpError(404, "Eintrag nicht gefunden");
+    await requireMember(expense.group_id, user.id);
+    const b = await body(req);
+    const title = str(b.title, "Titel", 100);
+    const amount = Math.round(Number(b.amount_cents));
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) throw new HttpError(400, "Ungültiger Betrag");
+    const paidBy = Number(b.paid_by);
+    const participants = Array.isArray(b.participants) ? [...new Set(b.participants.map(Number))] : [];
+    if (!participants.length) throw new HttpError(400, "Mindestens eine Person muss betroffen sein");
+
+    const allowedRows = await db.sql<{ user_id: number }>`
+      SELECT user_id FROM group_members WHERE group_id = ${expense.group_id}
+      UNION SELECT user_id FROM expense_shares WHERE expense_id = ${expenseId}`;
+    const allowed = new Set([...allowedRows.map((r) => r.user_id), expense.paid_by]);
+    if (!allowed.has(paidBy) || participants.some((id) => !allowed.has(id))) {
+      throw new HttpError(400, "Unbekannte Person in der Gruppe");
+    }
+
+    const client = await db.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE expenses SET title = $1, amount_cents = $2, paid_by = $3 WHERE id = $4", [
+        title,
+        amount,
+        paidBy,
+        expenseId,
+      ]);
+      await client.query("DELETE FROM expense_shares WHERE expense_id = $1", [expenseId]);
+      for (const s of split(amount, participants)) {
+        await client.query("INSERT INTO expense_shares (expense_id, user_id, share_cents) VALUES ($1, $2, $3)", [
+          expenseId,
+          s.id,
+          s.cents,
+        ]);
+      }
+      // People who left the group must stay at a zero balance, otherwise the group's math no longer adds up.
+      const { rows: unbalanced } = await client.query(
+        `SELECT u.name FROM (
+           SELECT paid_by AS user_id, amount_cents AS c FROM expenses WHERE group_id = $1
+           UNION ALL
+           SELECT s.user_id, -s.share_cents FROM expense_shares s JOIN expenses e ON e.id = s.expense_id WHERE e.group_id = $1
+         ) x JOIN users u ON u.id = x.user_id
+         WHERE x.user_id NOT IN (SELECT user_id FROM group_members WHERE group_id = $1)
+         GROUP BY u.id, u.name HAVING SUM(x.c) <> 0`,
+        [expense.group_id],
+      );
+      if (unbalanced.length) {
+        throw new HttpError(
+          409,
+          `${unbalanced.map((r) => r.name).join(", ")} ist nicht mehr in der Gruppe – erst wieder einladen, dann ändern`,
+        );
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+    return json(await groupDetails(expense.group_id));
+  }
+
   if ((m = path.match(/^\/expenses\/(\d+)$/)) && method === "DELETE") {
     const user = await requireUser(context);
     const [expense] = await db.sql<{ group_id: number }>`SELECT group_id FROM expenses WHERE id = ${Number(m[1])}`;

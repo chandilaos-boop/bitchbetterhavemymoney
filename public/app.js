@@ -917,8 +917,10 @@ function expenseDetail(data, e) {
         .map((s) => `<div class="person" style="cursor:default;padding-left:30px">${avatar(byId[s.user_id] ?? { id: s.user_id, name: "?" }, 28)}<span class="grow muted" style="font-weight:500">${esc(byId[s.user_id]?.name ?? "?")} ${e.is_settlement ? "hat erhalten" : "schuldet"}</span><span class="share">${fmt(s.cents)}</span></div>`)
         .join("")}
     </div>
-    <button class="btn danger block mt" id="del">${icon("trash")} Löschen</button>`,
-    (el) =>
+    ${e.is_settlement ? "" : `<button class="btn block mt" id="edit">✏️ Bearbeiten</button>`}
+    <button class="btn danger block" id="del" style="margin-top:10px">${icon("trash")} Löschen</button>`,
+    (el) => {
+      el.querySelector("#edit")?.addEventListener("click", () => expenseSheet(data.group.id, e));
       el.querySelector("#del").addEventListener("click", async () => {
         if (!confirm(`„${e.title}“ löschen?\nDas Geld ist dadurch leider trotzdem weg 🕵️`)) return;
         try {
@@ -928,7 +930,8 @@ function expenseDetail(data, e) {
         } catch (err) {
           toast(err.message);
         }
-      }),
+      });
+    },
   );
 }
 
@@ -977,10 +980,10 @@ function parseAmount(raw) {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 }
 
-async function expenseSheet(presetGroupId) {
+async function expenseSheet(presetGroupId, existing = null) {
   let groupId = presetGroupId ?? (state.groups.length === 1 ? state.groups[0].id : null);
   const body = openSheet(
-    "Neue Ausgabe",
+    existing ? "Ausgabe bearbeiten ✏️" : "Neue Ausgabe",
     `
     ${presetGroupId ? "" : `
       <div class="field"><span class="field-label">Gruppe</span>
@@ -990,12 +993,12 @@ async function expenseSheet(presetGroupId) {
       </div>`}
     <form id="exp">
       <label class="field"><span class="field-label">Titel</span>
-        <div class="input-icon"><span class="title-emoji" id="temoji">🧾</span><input class="input" id="title" placeholder="${esc(pick(TITLE_IDEAS))}" maxlength="100" required autocomplete="off"></div></label>
+        <div class="input-icon"><span class="title-emoji" id="temoji">🧾</span><input class="input" id="title" placeholder="${esc(pick(TITLE_IDEAS))}" maxlength="100" required autocomplete="off" value="${existing ? esc(existing.title) : ""}"></div></label>
       <div class="field"><span class="field-label">Betrag</span>
-        <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off"><span>€</span></label>
+        <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off" value="${existing ? (existing.amount_cents / 100).toFixed(2).replace(".", ",") : ""}"><span>€</span></label>
         <p class="vibe" id="vibe"></p></div>
       <div id="who"></div>
-      <button class="btn block mt" type="submit" id="save">Ausgabe speichern</button>
+      <button class="btn block mt" type="submit" id="save">${existing ? "Änderungen speichern" : "Ausgabe speichern"}</button>
     </form>`,
   );
 
@@ -1032,10 +1035,19 @@ async function expenseSheet(presetGroupId) {
     }
     const cached = groupCache.get(String(groupId));
     members = cached?.members ?? state.groups.find((g) => g.id === groupId)?.members ?? [];
+    if (existing) {
+      // Keep people who already took part selectable, even if they left the group since.
+      const involved = new Set([existing.paid_by, ...existing.shares.map((sh) => sh.user_id)]);
+      const formerInvolved = (cached?.former ?? []).filter((f) => involved.has(f.id)).map((f) => ({ ...f, former: true }));
+      members = [...members, ...formerInvolved];
+    }
+    const sharedBy = existing ? new Set(existing.shares.map((sh) => sh.user_id)) : null;
+    const payerId = existing ? existing.paid_by : state.user.id;
+    const label = (m) => `${esc(m.name)}${m.id === state.user.id ? " (du)" : ""}${m.former ? " (nicht mehr dabei)" : ""}`;
     who.innerHTML = `
       <label class="field"><span class="field-label">Bezahlt von</span>
         <select class="select" id="paid">${members
-          .map((m) => `<option value="${m.id}" ${m.id === state.user.id ? "selected" : ""}>${esc(m.name)}${m.id === state.user.id ? " (du)" : ""}</option>`)
+          .map((m) => `<option value="${m.id}" ${m.id === payerId ? "selected" : ""}>${label(m)}</option>`)
           .join("")}</select></label>
       <div class="field">
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1044,8 +1056,8 @@ async function expenseSheet(presetGroupId) {
         <div class="people">${members
           .map(
             (m) => `
-          <label class="person">${avatar(m, 34)}<span class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}</span>
-            <span class="share"></span><input type="checkbox" class="check" value="${m.id}" checked></label>`,
+          <label class="person">${avatar(m, 34)}<span class="grow">${esc(m.name)}${m.id === state.user.id ? ' <span class="faint small">(du)</span>' : ""}${m.former ? ' <span class="faint small">(nicht mehr dabei)</span>' : ""}</span>
+            <span class="share"></span><input type="checkbox" class="check" value="${m.id}" ${!sharedBy || sharedBy.has(m.id) ? "checked" : ""}></label>`,
           )
           .join("")}</div>
         <p class="faint small" id="hint" style="margin:8px 2px 0"></p>
@@ -1069,7 +1081,7 @@ async function expenseSheet(presetGroupId) {
   body.addEventListener("input", updateShares);
   body.addEventListener("change", updateShares);
   await loadMembers();
-  setTimeout(() => body.querySelector("#title")?.focus(), 300);
+  if (!existing) setTimeout(() => body.querySelector("#title")?.focus(), 300);
 
   body.querySelector("#exp").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1080,11 +1092,20 @@ async function expenseSheet(presetGroupId) {
     if (!participants.length) return fail("Irgendwer muss das ja bezahlen 👀");
     const btn = body.querySelector("#save");
     btn.disabled = true;
+    const payload = { title: body.querySelector("#title").value, amount_cents, paid_by: Number(who.querySelector("#paid").value), participants };
+    if (existing) {
+      try {
+        updateGroup(await api(`/expenses/${existing.id}`, { method: "PUT", body: payload }));
+        closeSheet();
+        toast(pick(["Geändert ✏️", "Update läuft – Zahlen stimmen wieder 🧮", "Korrigiert. Ordnung muss sein 📐"]));
+      } catch (err) {
+        fail(err.message);
+        btn.disabled = false;
+      }
+      return;
+    }
     try {
-      const data = await api(`/groups/${groupId}/expenses`, {
-        method: "POST",
-        body: { title: body.querySelector("#title").value, amount_cents, paid_by: Number(who.querySelector("#paid").value), participants },
-      });
+      const data = await api(`/groups/${groupId}/expenses`, { method: "POST", body: payload });
       updateGroup(data);
       closeSheet();
       toast(pick(MSG.saved));
