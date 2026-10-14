@@ -91,7 +91,7 @@ async function groupDetails(groupId: number) {
     WHERE gm.group_id = ${groupId}
     ORDER BY gm.joined_at`;
   const expenses = await db.sql`
-    SELECT e.id, e.title, e.amount_cents, e.paid_by, e.created_by, e.is_settlement, e.created_at,
+    SELECT e.id, e.title, e.amount_cents, e.paid_by, e.created_by, e.is_settlement, e.created_at, e.updated_by, e.updated_at,
       COALESCE(json_agg(json_build_object('user_id', s.user_id, 'cents', s.share_cents)) FILTER (WHERE s.user_id IS NOT NULL), '[]') AS shares
     FROM expenses e LEFT JOIN expense_shares s ON s.expense_id = e.id
     WHERE e.group_id = ${groupId}
@@ -217,7 +217,17 @@ async function route(req: Request, context: Context): Promise<Response> {
       JOIN users target ON target.id = r.user_id
       WHERE r.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
       ORDER BY r.created_at DESC LIMIT 20`;
-    const items = [...expenses, ...joins, ...resets]
+    const edits = await db.sql`
+      SELECT 'edited' AS type, e.id, e.group_id, g.name AS group_name, g.emoji, e.title, e.amount_cents,
+        e.paid_by, e.updated_by AS actor_id, actor.name AS actor_name, e.updated_at AS at,
+        (SELECT s.share_cents FROM expense_shares s WHERE s.expense_id = e.id AND s.user_id = ${user.id}) AS my_share
+      FROM expenses e
+      JOIN groups g ON g.id = e.group_id
+      JOIN users actor ON actor.id = e.updated_by
+      WHERE e.updated_at IS NOT NULL
+        AND e.group_id IN (SELECT group_id FROM group_members WHERE user_id = ${user.id})
+      ORDER BY e.updated_at DESC LIMIT 30`;
+    const items = [...expenses, ...joins, ...resets, ...edits]
       .sort((a, b) => new Date(b.at as string).getTime() - new Date(a.at as string).getTime())
       .slice(0, 60);
     return json({ items });
@@ -321,12 +331,10 @@ async function route(req: Request, context: Context): Promise<Response> {
     const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE expenses SET title = $1, amount_cents = $2, paid_by = $3 WHERE id = $4", [
-        title,
-        amount,
-        paidBy,
-        expenseId,
-      ]);
+      await client.query(
+        "UPDATE expenses SET title = $1, amount_cents = $2, paid_by = $3, updated_by = $4, updated_at = NOW() WHERE id = $5",
+        [title, amount, paidBy, user.id, expenseId],
+      );
       await client.query("DELETE FROM expense_shares WHERE expense_id = $1", [expenseId]);
       for (const s of split(amount, participants)) {
         await client.query("INSERT INTO expense_shares (expense_id, user_id, share_cents) VALUES ($1, $2, $3)", [

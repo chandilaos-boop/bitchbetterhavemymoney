@@ -634,6 +634,12 @@ async function activityView() {
         if (net > 0) effect = `<div class="effect pos money">Du bekommst ${fmt(net)} zurück</div>`;
         else if (net < 0) effect = `<div class="effect neg money">Du schuldest ${fmt(-net)}</div>`;
         else effect = `<div class="effect faint">Nicht beteiligt</div>`;
+      } else if (it.type === "edited") {
+        text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} „<b>${esc(it.title)}</b>“ in „<b>${esc(it.group_name)}</b>“ geändert ✏️`;
+        const net = (it.paid_by === me ? it.amount_cents : 0) - (it.my_share ?? 0);
+        if (net > 0) effect = `<div class="effect pos money">Jetzt bekommst du ${fmt(net)} zurück</div>`;
+        else if (net < 0) effect = `<div class="effect neg money">Jetzt schuldest du ${fmt(-net)}</div>`;
+        else effect = `<div class="effect faint">Du bist nicht beteiligt</div>`;
       } else if (it.type === "reset") {
         text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} einen Passwort-Reset-Link für <b>${it.target_id === me ? "dich" : esc(it.target_name)}</b> erstellt 🔑`;
       } else if (it.type === "created") {
@@ -754,7 +760,7 @@ function drawGroup(data) {
         <div class="row" data-exp="${e.id}">
           <div class="date-block"><div class="m">${MONTHS[d.getMonth()]}</div><div class="d">${String(d.getDate()).padStart(2, "0")}</div></div>
           <div class="receipt emoji ${e.is_settlement ? "settle" : ""}">${e.is_settlement ? "🤝" : guessEmoji(e.title)}</div>
-          <div class="grow"><div class="row-title" style="font-size:16px">${esc(e.title)}</div><div class="row-sub money">${sub}</div></div>
+          <div class="grow"><div class="row-title" style="font-size:16px">${esc(e.title)}${e.updated_at ? ' <span class="edited-mark" title="bearbeitet">✏️</span>' : ""}</div><div class="row-sub money">${sub}</div></div>
           ${right}
         </div>`;
     })
@@ -911,6 +917,7 @@ function expenseDetail(data, e) {
       </div>
     </div>
     <p class="muted small mt">Eingetragen von ${esc(byId[e.created_by]?.name ?? "?")} am ${d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>
+    ${e.updated_at ? `<p class="edited-note small">✏️ Zuletzt bearbeitet von <b>${e.updated_by === state.user.id ? "dir" : esc(byId[e.updated_by]?.name ?? "?")}</b> am ${new Date(e.updated_at).toLocaleDateString("de-DE", { day: "numeric", month: "long" })}, ${new Date(e.updated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>` : ""}
     <div class="people mt">
       <div class="person" style="cursor:default">${avatar(payer ?? { id: 0, name: "?" }, 34)}<span class="grow">${esc(payer?.name ?? "?")} hat ${fmt(e.amount_cents)} bezahlt</span></div>
       ${e.shares

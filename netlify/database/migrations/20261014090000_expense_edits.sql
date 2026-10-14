@@ -1,0 +1,2 @@
+ALTER TABLE expenses ADD COLUMN updated_by INTEGER REFERENCES users(id);
+ALTER TABLE expenses ADD COLUMN updated_at TIMESTAMPTZ;

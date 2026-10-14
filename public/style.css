@@ -472,3 +472,6 @@ svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-widt
 .mini-logo { width: 46px; height: 46px; border-radius: 14px; flex: none; box-shadow: 0 6px 16px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 255, 255, .1);
   transition: transform .3s cubic-bezier(.3, 1.8, .5, 1); }
 .mini-logo:hover, .mini-logo:active { transform: rotate(-8deg) scale(1.08); }
+.edited-note { margin-top: 6px; padding: 8px 12px; border-radius: 12px; background: rgba(250, 204, 21, .08); border: 1px solid rgba(250, 204, 21, .2); color: #fde68a; }
+.edited-note b { color: #fef3c7; }
+.edited-mark { font-size: 12px; opacity: .8; }
