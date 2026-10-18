@@ -73,6 +73,17 @@ function inviteCode() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
+// Optional "YYYY-MM-DD" from the client; null means "today" (database default).
+function spentOn(v: unknown): string | null {
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) {
+    throw new HttpError(400, "Ungültiges Datum");
+  }
+  const year = Number(v.slice(0, 4));
+  if (year < 2000 || year > 2100) throw new HttpError(400, "Ungültiges Datum");
+  return v;
+}
+
 // Splits amount evenly; leftover cents go to the first participants.
 function split(amount: number, userIds: number[]) {
   const base = Math.floor(amount / userIds.length);
@@ -92,11 +103,12 @@ async function groupDetails(groupId: number) {
     ORDER BY gm.joined_at`;
   const expenses = await db.sql`
     SELECT e.id, e.title, e.amount_cents, e.paid_by, e.created_by, e.is_settlement, e.created_at, e.updated_by, e.updated_at,
+      to_char(e.spent_on, 'YYYY-MM-DD') AS spent_on,
       COALESCE(json_agg(json_build_object('user_id', s.user_id, 'cents', s.share_cents)) FILTER (WHERE s.user_id IS NOT NULL), '[]') AS shares
     FROM expenses e LEFT JOIN expense_shares s ON s.expense_id = e.id
     WHERE e.group_id = ${groupId}
     GROUP BY e.id
-    ORDER BY e.created_at DESC`;
+    ORDER BY e.spent_on DESC, e.created_at DESC`;
   const former = await db.sql<{ id: number; name: string }>`
     SELECT DISTINCT u.id, u.name FROM users u
     WHERE u.id NOT IN (SELECT user_id FROM group_members WHERE group_id = ${groupId})
@@ -193,6 +205,7 @@ async function route(req: Request, context: Context): Promise<Response> {
     const expenses = await db.sql`
       SELECT 'expense' AS type, e.id, e.group_id, g.name AS group_name, g.emoji, e.title, e.amount_cents,
         e.paid_by, payer.name AS payer_name, e.is_settlement, e.created_by AS actor_id, actor.name AS actor_name, e.created_at AS at,
+        to_char(e.spent_on, 'YYYY-MM-DD') AS spent_on,
         (SELECT s.share_cents FROM expense_shares s WHERE s.expense_id = e.id AND s.user_id = ${user.id}) AS my_share
       FROM expenses e
       JOIN groups g ON g.id = e.group_id
@@ -283,9 +296,9 @@ async function route(req: Request, context: Context): Promise<Response> {
     try {
       await client.query("BEGIN");
       const { rows } = await client.query(
-        `INSERT INTO expenses (group_id, title, amount_cents, paid_by, created_by, is_settlement)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [groupId, title, amount, paidBy, user.id, b.is_settlement === true],
+        `INSERT INTO expenses (group_id, title, amount_cents, paid_by, created_by, is_settlement, spent_on)
+         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::date, (NOW() AT TIME ZONE 'Europe/Berlin')::date)) RETURNING id`,
+        [groupId, title, amount, paidBy, user.id, b.is_settlement === true, spentOn(b.spent_on)],
       );
       for (const s of split(amount, participants)) {
         await client.query("INSERT INTO expense_shares (expense_id, user_id, share_cents) VALUES ($1, $2, $3)", [
@@ -332,8 +345,9 @@ async function route(req: Request, context: Context): Promise<Response> {
     try {
       await client.query("BEGIN");
       await client.query(
-        "UPDATE expenses SET title = $1, amount_cents = $2, paid_by = $3, updated_by = $4, updated_at = NOW() WHERE id = $5",
-        [title, amount, paidBy, user.id, expenseId],
+        `UPDATE expenses SET title = $1, amount_cents = $2, paid_by = $3, updated_by = $4, updated_at = NOW(),
+           spent_on = COALESCE($6::date, spent_on) WHERE id = $5`,
+        [title, amount, paidBy, user.id, expenseId, spentOn(b.spent_on)],
       );
       await client.query("DELETE FROM expense_shares WHERE expense_id = $1", [expenseId]);
       for (const s of split(amount, participants)) {

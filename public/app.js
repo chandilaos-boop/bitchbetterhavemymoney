@@ -227,6 +227,21 @@ function fail(msg, el) {
   shake(el ?? currentSheet?.querySelector(".sheet"));
 }
 
+// Dates for "when was the money spent" are plain calendar days ("YYYY-MM-DD"), always read in local time.
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayISO = () => isoDay(new Date());
+const yesterdayISO = () => isoDay(new Date(Date.now() - 864e5));
+const parseDay = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const expenseDate = (e) => (e.spent_on ? parseDay(e.spent_on) : new Date(e.created_at));
+function dayLabel(iso) {
+  if (iso === todayISO()) return "heute";
+  if (iso === yesterdayISO()) return "gestern";
+  return parseDay(iso).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "long", year: "numeric" });
+}
+
 const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const rtf = new Intl.RelativeTimeFormat("de", { numeric: "auto" });
 function ago(date) {
@@ -628,7 +643,8 @@ async function activityView() {
         if (it.is_settlement) {
           text = `<b>${who(it.paid_by, it.payer_name)}</b> ${it.paid_by === me ? "hast" : "hat"} eine Zahlung über <b>${fmt(it.amount_cents)}</b> in „<b>${esc(it.group_name)}</b>“ eingetragen.`;
         } else {
-          text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} „<b>${esc(it.title)}</b>“ in „<b>${esc(it.group_name)}</b>“ hinzugefügt.`;
+          const backdated = it.spent_on && it.spent_on !== isoDay(new Date(it.at));
+          text = `<b>${who(it.actor_id, it.actor_name)}</b> ${it.actor_id === me ? "hast" : "hat"} „<b>${esc(it.title)}</b>“ in „<b>${esc(it.group_name)}</b>“ hinzugefügt${backdated ? ` <span class="faint">(vom ${parseDay(it.spent_on).toLocaleDateString("de-DE", { day: "numeric", month: "short" })})</span>` : ""}.`;
         }
         const net = (it.paid_by === me ? it.amount_cents : 0) - (it.my_share ?? 0);
         if (net > 0) effect = `<div class="effect pos money">Du bekommst ${fmt(net)} zurück</div>`;
@@ -742,7 +758,7 @@ function drawGroup(data) {
   let lastMonth = "";
   const expenseRows = expenses
     .map((e) => {
-      const d = new Date(e.created_at);
+      const d = expenseDate(e);
       const month = d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
       const header = month !== lastMonth ? `<div class="month">${month}</div>` : "";
       lastMonth = month;
@@ -755,7 +771,7 @@ function drawGroup(data) {
           : `<div class="status none"><div class="lbl">nicht beteiligt</div></div>`;
       const sub = e.is_settlement
         ? `${esc(payer)} → ${esc(byId[e.shares[0]?.user_id]?.name ?? "?")} · ${fmt(e.amount_cents)}`
-        : `${e.paid_by === state.user.id ? "Du" : esc(firstName(payer))} · ${fmt(e.amount_cents)}`;
+        : `${e.paid_by === state.user.id ? "Du" : esc(firstName(payer))} · ${fmt(e.amount_cents)}<span class="row-date"> · ${d.getDate()}. ${MONTHS[d.getMonth()]}</span>`;
       return `${header}
         <div class="row" data-exp="${e.id}">
           <div class="date-block"><div class="m">${MONTHS[d.getMonth()]}</div><div class="d">${String(d.getDate()).padStart(2, "0")}</div></div>
@@ -906,6 +922,7 @@ function expenseDetail(data, e) {
   const byId = Object.fromEntries([...(data.former ?? []), ...data.members].map((m) => [m.id, m]));
   const d = new Date(e.created_at);
   const payer = byId[e.paid_by];
+  const spent = e.spent_on ?? isoDay(d);
   openSheet(
     e.is_settlement ? "Zahlung" : "Ausgabe",
     `
@@ -916,7 +933,8 @@ function expenseDetail(data, e) {
         <div class="money" style="font-size:28px;font-weight:800">${fmt(e.amount_cents)}</div>
       </div>
     </div>
-    <p class="muted small mt">Eingetragen von ${esc(byId[e.created_by]?.name ?? "?")} am ${d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>
+    <p class="spent-on mt">📅 ${e.is_settlement ? "Bezahlt" : "Ausgegeben"} ${["heute", "gestern"].includes(dayLabel(spent)) ? dayLabel(spent) : `am ${dayLabel(spent)}`}</p>
+    <p class="muted small" style="margin-top:6px">Eingetragen von ${esc(byId[e.created_by]?.name ?? "?")} am ${d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" })}, ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>
     ${e.updated_at ? `<p class="edited-note small">✏️ Zuletzt bearbeitet von <b>${e.updated_by === state.user.id ? "dir" : esc(byId[e.updated_by]?.name ?? "?")}</b> am ${new Date(e.updated_at).toLocaleDateString("de-DE", { day: "numeric", month: "long" })}, ${new Date(e.updated_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</p>` : ""}
     <div class="people mt">
       <div class="person" style="cursor:default">${avatar(payer ?? { id: 0, name: "?" }, 34)}<span class="grow">${esc(payer?.name ?? "?")} hat ${fmt(e.amount_cents)} bezahlt</span></div>
@@ -1004,6 +1022,14 @@ async function expenseSheet(presetGroupId, existing = null) {
       <div class="field"><span class="field-label">Betrag</span>
         <label class="amount-field"><input id="amount" inputmode="decimal" placeholder="0,00" required autocomplete="off" value="${existing ? (existing.amount_cents / 100).toFixed(2).replace(".", ",") : ""}"><span>€</span></label>
         <p class="vibe" id="vibe"></p></div>
+      <div class="field"><span class="field-label">Wann?</span>
+        <div class="date-row">
+          <button type="button" class="chip" data-day="${todayISO()}">Heute</button>
+          <button type="button" class="chip" data-day="${yesterdayISO()}">Gestern</button>
+          <label class="date-pick">📅<input type="date" id="spent" value="${existing?.spent_on ?? todayISO()}" max="${todayISO()}" required></label>
+        </div>
+        <p class="faint small" id="when" style="margin:8px 2px 0"></p>
+      </div>
       <div id="who"></div>
       <button class="btn block mt" type="submit" id="save">${existing ? "Änderungen speichern" : "Ausgabe speichern"}</button>
     </form>`,
@@ -1023,6 +1049,13 @@ async function expenseSheet(presetGroupId, existing = null) {
       const share = on && n && cents ? Math.floor(cents / n) + (idx < cents % n ? 1 : 0) : 0;
       p.querySelector(".share").textContent = on && cents ? fmt(share) : "";
     });
+    const spentEl = body.querySelector("#spent");
+    body.querySelectorAll("[data-day]").forEach((c) => c.classList.toggle("active", c.dataset.day === spentEl.value));
+    const when = body.querySelector("#when");
+    const daysAgo = spentEl.value ? Math.round((parseDay(todayISO()) - parseDay(spentEl.value)) / 864e5) : 0;
+    when.textContent =
+      !spentEl.value || daysAgo <= 1 ? "" : daysAgo < 7 ? `${dayLabel(spentEl.value)} – nachgetragen, kein Problem 🙃`
+        : daysAgo < 60 ? `${dayLabel(spentEl.value)} – besser spät als nie 🐢` : `${dayLabel(spentEl.value)} – Archäologie-Modus aktiviert 🦕`;
     const vibe = body.querySelector("#vibe");
     const v = amountVibe(cents);
     if (vibe.textContent !== v) { vibe.textContent = v; vibe.classList.remove("pop"); void vibe.offsetWidth; vibe.classList.add("pop"); }
@@ -1085,9 +1118,16 @@ async function expenseSheet(presetGroupId, existing = null) {
       loadMembers();
     }),
   );
+  body.querySelectorAll("[data-day]").forEach((c) =>
+    c.addEventListener("click", () => {
+      body.querySelector("#spent").value = c.dataset.day;
+      updateShares();
+    }),
+  );
   body.addEventListener("input", updateShares);
   body.addEventListener("change", updateShares);
   await loadMembers();
+  updateShares();
   if (!existing) setTimeout(() => body.querySelector("#title")?.focus(), 300);
 
   body.querySelector("#exp").addEventListener("submit", async (e) => {
@@ -1099,7 +1139,9 @@ async function expenseSheet(presetGroupId, existing = null) {
     if (!participants.length) return fail("Irgendwer muss das ja bezahlen 👀");
     const btn = body.querySelector("#save");
     btn.disabled = true;
-    const payload = { title: body.querySelector("#title").value, amount_cents, paid_by: Number(who.querySelector("#paid").value), participants };
+    const spent_on = body.querySelector("#spent").value;
+    if (!spent_on) return fail("Wann war das? Datum fehlt 📅");
+    const payload = { title: body.querySelector("#title").value, amount_cents, paid_by: Number(who.querySelector("#paid").value), participants, spent_on };
     if (existing) {
       try {
         updateGroup(await api(`/expenses/${existing.id}`, { method: "PUT", body: payload }));

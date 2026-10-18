@@ -475,3 +475,14 @@ svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-widt
 .edited-note { margin-top: 6px; padding: 8px 12px; border-radius: 12px; background: rgba(250, 204, 21, .08); border: 1px solid rgba(250, 204, 21, .2); color: #fde68a; }
 .edited-note b { color: #fef3c7; }
 .edited-mark { font-size: 12px; opacity: .8; }
+.date-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.date-row .chip { padding: 0 16px; }
+.date-pick {
+  flex: 1; min-width: 150px; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px;
+  border-radius: 999px; background: var(--bg-elev); border: 1.5px solid var(--line-strong); cursor: pointer;
+}
+.date-pick:focus-within { border-color: var(--accent); }
+.date-pick input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; color-scheme: dark; }
+.spent-on { font-weight: 700; font-size: 15px; }
+.row-date { display: none; }
+@media (max-width: 420px) { .row-date { display: inline; } }
