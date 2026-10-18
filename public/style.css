@@ -486,3 +486,7 @@ svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-widt
 .spent-on { font-weight: 700; font-size: 15px; }
 .row-date { display: none; }
 @media (max-width: 420px) { .row-date { display: inline; } }
+
+/* Pages without bottom nav (group page): FAB sits at the bottom, content gets room to scroll past it. */
+.fab.low { bottom: calc(18px + env(safe-area-inset-bottom)); }
+.shell.no-nav.has-fab { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }

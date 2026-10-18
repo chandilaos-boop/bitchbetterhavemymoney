@@ -338,9 +338,10 @@ function statusHtml(cents, { me = true, settledText = "quitt" } = {}) {
 
 // ---------- shell ----------
 function shell(content, { nav = null, fab = true } = {}) {
+  const showFab = fab && state.groups.length;
   app.innerHTML = `
-    <div class="shell ${nav ? "" : "no-nav"}">${content}</div>
-    ${fab && state.groups.length ? `<button class="btn fab" id="fab">${icon("receipt")} Ausgabe hinzufügen</button>` : ""}
+    <div class="shell ${nav ? "" : "no-nav"} ${showFab ? "has-fab" : ""}">${content}</div>
+    ${showFab ? `<button class="btn fab ${nav ? "" : "low"}" id="fab">${icon("receipt")} Ausgabe hinzufügen</button>` : ""}
     ${nav ? navHtml(nav) : ""}`;
   app.querySelector("#fab")?.addEventListener("click", () => expenseSheet(fab === true ? null : fab));
   animateCounts(app);
